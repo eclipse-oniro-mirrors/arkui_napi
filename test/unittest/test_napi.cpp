@@ -10841,6 +10841,334 @@ HWTEST_F(NapiBasicTest, NapiCloseHandleScopeTest003, testing::ext::TestSize.Leve
 }
 
 /**
+ * @tc.name: NapiOpenMicrotaskScopeTest
+ * @tc.desc: Test interface of napi_open_microtask_scope
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiOpenMicrotaskScopeTest001, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    auto res = napi_open_microtask_scope(env, nullptr);
+    ASSERT_EQ(res, napi_invalid_arg);
+}
+
+/**
+ * @tc.name: NapiOpenMicrotaskScopeTest
+ * @tc.desc: Test interface of napi_open_microtask_scope
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiOpenMicrotaskScopeTest002, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+    auto res = napi_close_microtask_scope(env, scope);
+    ASSERT_EQ(res, napi_ok);
+}
+
+/**
+ * @tc.name: NapiOpenMicrotaskScopeTest
+ * @tc.desc: Test nested open of napi_open_microtask_scope is rejected
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiOpenMicrotaskScopeTest003, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+    napi_microtask_scope nested = nullptr;
+    auto res = napi_open_microtask_scope(env, &nested);
+    ASSERT_EQ(res, napi_invalid_arg);
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+}
+
+/**
+ * @tc.name: NapiCloseMicrotaskScopeTest
+ * @tc.desc: Test interface of napi_close_microtask_scope
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiCloseMicrotaskScopeTest001, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    auto res = napi_close_microtask_scope(env, nullptr);
+    ASSERT_EQ(res, napi_invalid_arg);
+}
+
+/**
+ * @tc.name: NapiCloseMicrotaskScopeTest
+ * @tc.desc: Test napi_close_microtask_scope without a matching open scope
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiCloseMicrotaskScopeTest002, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+    auto res = napi_close_microtask_scope(env, scope);
+    ASSERT_EQ(res, napi_invalid_arg);
+}
+
+/**
+ * @tc.name: MicrotaskScopeSuppressTest
+ * @tc.desc: Test the microtask triggered by napi_call_function is suppressed while a microtask
+ *           scope is open, and executed once when the scope is closed
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, MicrotaskScopeSuppressTest001, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    bool reactionCalled = false;
+    napi_value callback = nullptr;
+    auto onFulfilled = [](napi_env env, napi_callback_info info) -> napi_value {
+        void* data = nullptr;
+        size_t argc = 0;
+        napi_get_cb_info(env, info, &argc, nullptr, nullptr, &data);
+        *static_cast<bool*>(data) = true;
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onFulfilled", NAPI_AUTO_LENGTH, onFulfilled,
+        &reactionCalled, &callback));
+
+    napi_value key = nullptr;
+    napi_value thenFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "then", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &thenFunction));
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, thenFunction, 1, &callback, &callResult));
+    napi_value resolution = nullptr;
+    ASSERT_CHECK_CALL(napi_create_int32(env, 1, &resolution));
+    ASSERT_CHECK_CALL(napi_resolve_deferred(env, deferred, resolution));
+
+    // drain attempts from the call return and the native resolve are both suppressed
+    ASSERT_FALSE(reactionCalled);
+
+    // closing the scope drains the pending microtask queue once
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+    ASSERT_TRUE(reactionCalled);
+}
+
+/**
+ * @tc.name: MicrotaskScopeSuppressTest
+ * @tc.desc: Test the microtask triggered by napi_call_function is executed without a microtask scope
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, MicrotaskScopeSuppressTest002, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    bool reactionCalled = false;
+    napi_value callback = nullptr;
+    auto onFulfilled = [](napi_env env, napi_callback_info info) -> napi_value {
+        void* data = nullptr;
+        size_t argc = 0;
+        napi_get_cb_info(env, info, &argc, nullptr, nullptr, &data);
+        *static_cast<bool*>(data) = true;
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onFulfilled", NAPI_AUTO_LENGTH, onFulfilled,
+        &reactionCalled, &callback));
+
+    napi_value key = nullptr;
+    napi_value thenFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "then", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &thenFunction));
+
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, thenFunction, 1, &callback, &callResult));
+    napi_value resolution = nullptr;
+    ASSERT_CHECK_CALL(napi_create_int32(env, 1, &resolution));
+    ASSERT_CHECK_CALL(napi_resolve_deferred(env, deferred, resolution));
+
+    // without a scope the reaction is drained right after the resolve
+    ASSERT_TRUE(reactionCalled);
+}
+
+/**
+ * @tc.name: MicrotaskScopeArkuiBridgePatternTest
+ * @tc.desc: Test the arkui native bridge pattern (manual microtask drain after calling into JS)
+ *           is suppressed while a microtask scope is open
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, MicrotaskScopeArkuiBridgePatternTest001, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    bool reactionCalled = false;
+    napi_value callback = nullptr;
+    auto onFulfilled = [](napi_env env, napi_callback_info info) -> napi_value {
+        void* data = nullptr;
+        size_t argc = 0;
+        napi_get_cb_info(env, info, &argc, nullptr, nullptr, &data);
+        *static_cast<bool*>(data) = true;
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onFulfilled", NAPI_AUTO_LENGTH, onFulfilled,
+        &reactionCalled, &callback));
+
+    napi_value key = nullptr;
+    napi_value thenFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "then", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &thenFunction));
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, thenFunction, 1, &callback, &callResult));
+    napi_value resolution = nullptr;
+    ASSERT_CHECK_CALL(napi_create_int32(env, 1, &resolution));
+    ASSERT_CHECK_CALL(napi_resolve_deferred(env, deferred, resolution));
+
+    panda::JSNApi::ExecutePendingJob(engine_->GetEcmaVm());
+    ASSERT_FALSE(reactionCalled);
+
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+    ASSERT_TRUE(reactionCalled);
+}
+
+/**
+ * @tc.name: MicrotaskScopeSuppressTest
+ * @tc.desc: Test the microtask triggered by napi_reject_deferred is suppressed while a microtask
+ *           scope is open, and executed once when the scope is closed
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, MicrotaskScopeSuppressTest003, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    bool reactionCalled = false;
+    napi_value callback = nullptr;
+    auto onRejected = [](napi_env env, napi_callback_info info) -> napi_value {
+        void* data = nullptr;
+        size_t argc = 0;
+        napi_get_cb_info(env, info, &argc, nullptr, nullptr, &data);
+        *static_cast<bool*>(data) = true;
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onRejected", NAPI_AUTO_LENGTH, onRejected,
+        &reactionCalled, &callback));
+
+    napi_value key = nullptr;
+    napi_value catchFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "catch", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &catchFunction));
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, catchFunction, 1, &callback, &callResult));
+    napi_value reason = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "reject", NAPI_AUTO_LENGTH, &reason));
+    ASSERT_CHECK_CALL(napi_reject_deferred(env, deferred, reason));
+
+    // the immediate drain attempt from the native reject is suppressed
+    ASSERT_FALSE(reactionCalled);
+
+    // closing the scope drains the pending microtask queue once
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+    ASSERT_TRUE(reactionCalled);
+}
+
+/**
+ * @tc.name: MicrotaskScopeSuppressTest
+ * @tc.desc: Test the microtask settled during napi_new_instance is suppressed while a microtask
+ *           scope is open, and executed once when the scope is closed
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, MicrotaskScopeSuppressTest004, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    bool reactionCalled = false;
+    napi_value callback = nullptr;
+    auto onFulfilled = [](napi_env env, napi_callback_info info) -> napi_value {
+        void* data = nullptr;
+        size_t argc = 0;
+        napi_get_cb_info(env, info, &argc, nullptr, nullptr, &data);
+        *static_cast<bool*>(data) = true;
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onFulfilled", NAPI_AUTO_LENGTH, onFulfilled,
+        &reactionCalled, &callback));
+
+    napi_value key = nullptr;
+    napi_value thenFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "then", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &thenFunction));
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, thenFunction, 1, &callback, &callResult));
+    ASSERT_FALSE(reactionCalled);
+
+    auto constructor = [](napi_env env, napi_callback_info info) -> napi_value {
+        napi_value thisVar = nullptr;
+        size_t argc = 0;
+        void* data = nullptr;
+        napi_get_cb_info(env, info, &argc, nullptr, &thisVar, &data);
+        napi_deferred ctorDeferred = static_cast<napi_deferred>(data);
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        napi_resolve_deferred(env, ctorDeferred, undefined);
+        return thisVar;
+    };
+    napi_value ctorClass = nullptr;
+    ASSERT_CHECK_CALL(napi_define_class(env, "MicrotaskScopeCtor", NAPI_AUTO_LENGTH, constructor,
+        deferred, 0, nullptr, &ctorClass));
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    napi_value instance = nullptr;
+    ASSERT_CHECK_CALL(napi_new_instance(env, ctorClass, 0, nullptr, &instance));
+
+    ASSERT_FALSE(reactionCalled);
+
+    ASSERT_CHECK_CALL(napi_close_microtask_scope(env, scope));
+    ASSERT_TRUE(reactionCalled);
+}
+
+/**
  * @tc.name: NapiOpenEscapableHandleScopeTest
  * @tc.desc: Test interface of napi_open_escapable_handle_scope
  * @tc.type: FUNC
