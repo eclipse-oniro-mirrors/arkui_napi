@@ -443,6 +443,56 @@ uint64_t ArkIdleMonitor::GetIdleMonitoringInterval()
 #endif
 }
 
+namespace {
+struct BgGcCtx {
+    ArkIdleMonitor* monitor {nullptr};
+    int64_t timestamp {0};
+    int64_t idleDuration {0};
+    uint32_t retry {0};
+};
+}
+
+#if defined(ENABLE_FFRT)
+void ArkIdleMonitor::BackgroundGcTimerCallback(void* data)
+{
+    auto* ctx = static_cast<BgGcCtx*>(data);
+    if (ctx == nullptr || ctx->monitor == nullptr) {
+        delete ctx;
+        return;
+    }
+    auto* monitor = ctx->monitor;
+    bool finalize = false;
+    if (!monitor->IsInBackground()) {
+        HILOG_INFO("ArkIdleMonitor exit BGGCTask loop, app switched to foreground");
+        finalize = true;
+    } else {
+        bool triggered = monitor->SwitchBackgroundCheckGCTask(ctx->timestamp, ctx->idleDuration);
+        if (triggered) {
+            finalize = true;
+        } else {
+            ++ctx->retry;
+            HILOG_INFO("ArkIdleMonitor retry BGGCTask, count:%{public}u", ctx->retry);
+            if (ctx->retry >= BACKGROUND_GC_CHECK_COUNT) {
+                finalize = true;
+            }
+        }
+    }
+    if (finalize) {
+        JSNApi::ExecuteTaskpoolShrinkCallback(monitor->inBackground_);
+        monitor->StopIdleMonitorTimerTaskAndPostSleepTask();
+        monitor->ClearIdleStats();
+        monitor->SetDuringBackgroundTask(false);
+        delete ctx;
+    } else {
+        ctx->timestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now()).time_since_epoch().count();
+        ctx->idleDuration = monitor->GetTotalIdleDuration();
+        monitor->switchBackgroundTimerHandler_ = ffrt_timer_start(ffrt_qos_user_initiated,
+            BACKGROUND_GC_CHECK_INTERVAL, data, BackgroundGcTimerCallback, false);
+    }
+}
+#endif
+
 void ArkIdleMonitor::NotifyChangeBackgroundState(bool inBackground)
 {
     if (enableIdleProcessGCBackground_) {
@@ -587,40 +637,9 @@ void ArkIdleMonitor::PostSwitchBackgroundGCTask()
     }
     auto nowTimestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(
         std::chrono::high_resolution_clock::now()).time_since_epoch().count();
-    std::tuple<ArkIdleMonitor*, int64_t, int64_t> myTuple = std::make_tuple(this, nowTimestamp, GetTotalIdleDuration());
-    auto* taskData = new std::tuple<ArkIdleMonitor*, int64_t, int64_t>(myTuple);
-    auto task = [](void* data) {
-        auto* tuple = reinterpret_cast<std::tuple<ArkIdleMonitor*, int64_t, int64_t>*>(data);
-        if (tuple == nullptr || std::get<0>(*tuple) == nullptr) {
-            delete tuple;
-            return;
-        }
-        auto* monitor = std::get<0>(*tuple);
-        for (uint32_t retry = 0; retry < BACKGROUND_GC_CHECK_COUNT; ++retry) {
-            if (!monitor->IsInBackground()) {
-                HILOG_INFO("ArkIdleMonitor exit BGGCTask loop, app switched to foreground");
-                break;
-            }
-            bool triggered = monitor->SwitchBackgroundCheckGCTask(std::get<1>(*tuple), std::get<2>(*tuple));
-            if (triggered) {
-                break;
-            }
-            HILOG_INFO("ArkIdleMonitor retry BGGCTask, count:%{public}u", retry + 1);
-            if (retry < BACKGROUND_GC_CHECK_COUNT - 1) {
-                std::get<1>(*tuple) = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                    std::chrono::high_resolution_clock::now()).time_since_epoch().count();
-                std::get<2>(*tuple) = monitor->GetTotalIdleDuration();
-                ffrt_usleep(BACKGROUND_GC_CHECK_INTERVAL * 1000); // ms → µs
-            }
-        }
-        JSNApi::ExecuteTaskpoolShrinkCallback(monitor->inBackground_);
-        monitor->StopIdleMonitorTimerTaskAndPostSleepTask();
-        monitor->ClearIdleStats();
-        monitor->SetDuringBackgroundTask(false);
-        delete tuple;
-    };
+    auto* taskData = new BgGcCtx{this, nowTimestamp, GetTotalIdleDuration()};
     switchBackgroundTimerHandler_ = ffrt_timer_start(ffrt_qos_user_initiated, BACKGROUND_GC_CHECK_INTERVAL,
-                                                     reinterpret_cast<void*>(taskData), task, false);
+                                                     static_cast<void*>(taskData), BackgroundGcTimerCallback, false);
     SetDuringBackgroundTask(true);
 #endif
 }
