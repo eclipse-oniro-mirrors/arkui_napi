@@ -803,7 +803,7 @@ NAPI_EXTERN napi_status napi_get_value_string_latin1(napi_env env,
         CHECK_ARG(env, result);
         *result = stringVal->Length(vm);
     } else if (LIKELY(bufsize != 0)) {
-        uint32_t copied = stringVal->WriteLatin1WithoutSwitchState(vm, buf, bufsize);
+        uint32_t copied = stringVal->WriteLatin1WithoutSwitchState(vm, buf, bufsize - 1);
         buf[copied] = '\0';
         if (result != nullptr) {
             *result = copied;

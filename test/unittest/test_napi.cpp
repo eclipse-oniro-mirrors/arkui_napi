@@ -891,6 +891,40 @@ HWTEST_F(NapiBasicTest, StringTest009, testing::ext::TestSize.Level1)
 }
 
 /**
+ * @tc.name: StringTest010
+ * @tc.desc: Test napi_get_value_string_latin1 does not overflow the buffer when the string is longer than bufsize.
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, StringTest010, testing::ext::TestSize.Level1)
+{
+    napi_env env = (napi_env)engine_;
+    const char testStr[] = "abcdefghij"; // 10: longer than bufsize to force truncation
+    napi_value result = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_latin1(env, testStr, strlen(testStr), &result));
+    ASSERT_CHECK_VALUE_TYPE(env, result, napi_string);
+
+    constexpr size_t bufsize = 5; // 5: smaller than testStr length
+    constexpr size_t guardSize = 4; // 4: sentinel bytes after the usable region
+    constexpr unsigned char canary = 0x7F;
+    unsigned char* storage = new unsigned char[bufsize + guardSize];
+    ASSERT_EQ(memset_s(storage, bufsize + guardSize, canary, bufsize + guardSize), EOK);
+    char* buf = reinterpret_cast<char*>(storage);
+
+    size_t copied = 0;
+    ASSERT_CHECK_CALL(napi_get_value_string_latin1(env, result, buf, bufsize, &copied));
+    ASSERT_LT(copied, bufsize);
+    ASSERT_EQ(buf[copied], '\0');
+    for (size_t i = 0; i < copied; i++) {
+        ASSERT_EQ(buf[i], testStr[i]);
+    }
+    for (size_t i = bufsize; i < bufsize + guardSize; i++) {
+        ASSERT_EQ(storage[i], canary);
+    }
+
+    delete[] storage;
+}
+
+/**
  * @tc.name: TypetagTest001
  * @tc.desc: Test typetag type.
  * @tc.type: FUNC
