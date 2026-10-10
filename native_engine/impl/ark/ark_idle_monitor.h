@@ -311,6 +311,7 @@ private:
     };
     WorkerGCResult EvaluateWorkerGC(napi_env workerEnv, bool isForeground);
     void PostWorkerFullGC(napi_env workerEnv, bool notifyFinished);
+    static void BackgroundGcTimerCallback(void* data);
     static uint64_t GetIdleMonitoringInterval();
 
     EcmaVM* mainVM_ {nullptr};
