@@ -261,7 +261,8 @@ HWTEST_F(ArkInteropTest, ArkTSInteropNapiCreateEngineNew, TestSize.Level1)
 
 TEST_F(ArkInteropTest, ScopeMT)
 {
-    constexpr int threadCount = 1000;
+    constexpr int threadCount = 10;
+    constexpr int repeat = 100000;
     std::thread threads[threadCount];
     for (auto i = 0; i < threadCount; i++) {
         threads[i] = std::thread([] {
@@ -269,9 +270,11 @@ TEST_F(ArkInteropTest, ScopeMT)
             auto vm = panda::JSNApi::CreateJSVM(options);
             EXPECT_TRUE(vm);
             auto env = P_CAST(vm, ARKTS_Env);
-            auto scope = ARKTS_OpenScope(env);
-            EXPECT_TRUE(scope);
-            ARKTS_CloseScope(env, scope);
+            for (auto i = 0;i < repeat; i++) {
+                auto scope = ARKTS_OpenScope(env);
+                EXPECT_TRUE(scope);
+                ARKTS_CloseScope(env, scope);
+            }
             panda::JSNApi::DestroyJSVM(vm);
         });
     }
