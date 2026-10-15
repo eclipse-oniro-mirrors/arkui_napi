@@ -388,12 +388,13 @@ NAPI_EXTERN napi_status napi_create_threadsafe_function(napi_env env, napi_value
     auto callJsCallback = reinterpret_cast<NativeThreadSafeFunctionCallJs>(call_js_cb);
     auto safeAsyncWork = engine->CreateSafeAsyncWork(func, async_resource, async_resource_name, max_queue_size,
         initial_thread_count, thread_finalize_data, finalizeCallback, context, callJsCallback);
-    CHECK_ENV(safeAsyncWork);
+    CHECK_ARG(env, safeAsyncWork);
 
     auto ret = safeAsyncWork->Init();
     if (ret) {
         *result = reinterpret_cast<napi_threadsafe_function>(safeAsyncWork);
     } else {
+        delete safeAsyncWork;
         return napi_status::napi_generic_failure;
     }
 
