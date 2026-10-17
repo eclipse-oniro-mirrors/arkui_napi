@@ -3855,7 +3855,14 @@ NAPI_EXTERN napi_status napi_destroy_runtime(napi_env env)
     CHECK_ENV(env);
 
     auto engine = reinterpret_cast<NativeEngine*>(env);
-    delete engine;
+    auto hostEngine = engine->GetHostEngine();
+    if (hostEngine) {
+        if (!hostEngine->IsMainEnvContext()) {
+            HILOG_FATAL("multi-context does not support this interface");
+        }
+        reinterpret_cast<ArkNativeEngine*>(hostEngine)->DeleteWorker(engine);
+        delete engine;
+    }
 
     return napi_ok;
 }
