@@ -75,8 +75,6 @@ private:
     bool previousState_ {true};
 };
 
-static HookJsConfig* g_hookJsConfig = nullptr;
-static std::once_flag g_hookOnceFlag;
 static std::string JS_CALL_STACK_DEPTH_SEP = ","; // ',' is js call stack depth separator
 static std::string JS_SYMBOL_FILEPATH_SEP = "|";  // '|' is js symbol and filepath separator
 static constexpr uint64_t BUF_SIZE = 128;
@@ -1140,13 +1138,13 @@ std::string ArkNativeEngine::GetHookModule(const std::string& preModule)
 }
 
 #ifdef ENABLE_HITRACE
-static inline bool CheckHookConfig(const std::string &nameRef)
+static inline bool CheckHookConfig(const std::string &nameRef, HookJsConfig* hookJsConfig)
 {
-    if (g_hookJsConfig == nullptr || g_hookJsConfig->jsStackReport <= 0 ||
-        g_hookJsConfig->maxJsStackDepth == 0 || !g_hookJsConfig->jsFpUnwind) {
+    if (hookJsConfig == nullptr || hookJsConfig->jsStackReport <= 0 ||
+        hookJsConfig->maxJsStackDepth == 0 || !hookJsConfig->jsFpUnwind) {
         return false;
-    } else if (g_hookJsConfig->filterNapiName[0] != '\0' &&
-        nameRef.find(g_hookJsConfig->filterNapiName) != std::string::npos) {
+    } else if (hookJsConfig->filterNapiName[0] != '\0' &&
+        nameRef.find(hookJsConfig->filterNapiName) != std::string::npos) {
         return false;
     }
     return true;
@@ -1173,11 +1171,9 @@ static inline uint64_t StartNapiProfilerTrace(panda::JsiRuntimeCallInfo* runtime
     LocalScope scope(vm);
     Local<panda::FunctionRef> fn = runtimeInfo->GetFunctionRef();
     Local<panda::StringRef> nameRef = fn->GetName(vm);
-    if (g_hookJsConfig == nullptr) {
-        std::call_once(g_hookOnceFlag, []() { g_hookJsConfig = (HookJsConfig*)__get_hook_config(); });
-    }
+    HookJsConfig* hookJsConfig = (HookJsConfig*)__get_hook_config();
     // add memtrace function
-    if (g_hookJsConfig != nullptr && g_hookJsConfig->jsStackReport == NAPI_CALL_STACK && !g_hookJsConfig->jsFpUnwind) {
+    if (hookJsConfig != nullptr && hookJsConfig->jsStackReport == NAPI_CALL_STACK && !hookJsConfig->jsFpUnwind) {
         OHOS::HiviewDFX::HiTraceChain::ClearId();
         std::unique_ptr<OHOS::HiviewDFX::HiTraceId> arkCallBackTraceId = std::make_unique<OHOS::HiviewDFX::HiTraceId>(
             OHOS::HiviewDFX::HiTraceChain::Begin("New ArkCallBackTrace", 0));
@@ -1191,17 +1187,17 @@ static inline uint64_t StartNapiProfilerTrace(panda::JsiRuntimeCallInfo* runtime
         (void)memtrace(reinterpret_cast<void*>(addr + g_chainId), 8, buffer, true); // 8: the size of addr
         return 0;
     }
-    if (!CheckHookConfig(nameRef->ToString(vm))) {
+    if (!CheckHookConfig(nameRef->ToString(vm), hookJsConfig)) {
         return 0;
     }
     BlockHookScope blockHook; // block hook
     std::string rawStack;
     std::vector<JsFrameInfo> jsFrames;
     uint64_t nestChainId = 0;
-    jsFrames.reserve(g_hookJsConfig->maxJsStackDepth);
+    jsFrames.reserve(hookJsConfig->maxJsStackDepth);
     engine->BuildJsStackInfoListWithCustomDepth(jsFrames);
     std::stringstream ssRawStack;
-    for (size_t i = 0; i < jsFrames.size() && i < g_hookJsConfig->maxJsStackDepth; i++) {
+    for (size_t i = 0; i < jsFrames.size() && i < hookJsConfig->maxJsStackDepth; i++) {
         ssRawStack << jsFrames[i].functionName << JS_SYMBOL_FILEPATH_SEP << jsFrames[i].fileName << ":" <<
             jsFrames[i].pos;
         if (i < jsFrames.size() - 1) {
