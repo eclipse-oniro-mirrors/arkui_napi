@@ -3109,6 +3109,68 @@ HWTEST_F(NapiBasicTest, DestroyRuntimeTest001, testing::ext::TestSize.Level1)
 }
 
 /**
+ * @tc.name: DestroyRuntimeTest002
+ * @tc.desc: Test destroy runtime repeatedly and unregister its worker VM before freeing it.
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, DestroyRuntimeTest002, testing::ext::TestSize.Level1)
+{
+    napi_env env = (napi_env)engine_;
+
+    for (int i = 0; i < INT_TWO; i++) {
+        napi_env newEnv = nullptr;
+        napi_status status = napi_create_runtime(env, &newEnv);
+        ASSERT_EQ(status, napi_ok);
+        ASSERT_NE(newEnv, nullptr);
+        auto workerEngine = reinterpret_cast<NativeEngine*>(newEnv);
+        EXPECT_EQ(workerEngine->GetHostEngine(), engine_);
+        auto hostVM = const_cast<EcmaVM*>(engine_->GetEcmaVm());
+        auto workerVM = const_cast<EcmaVM*>(workerEngine->GetEcmaVm());
+
+        bool cleanupCalled = false;
+        workerEngine->SetCleanEnv([hostVM, workerVM, &cleanupCalled]() {
+            EXPECT_FALSE(JSNApi::DeleteWorker(hostVM, workerVM));
+            JSNApi::DestroyJSVM(workerVM);
+            cleanupCalled = true;
+        });
+
+        status = napi_destroy_runtime(newEnv);
+        ASSERT_EQ(status, napi_ok);
+        EXPECT_TRUE(cleanupCalled);
+    }
+}
+
+/**
+ * @tc.name: DestroyRuntimeTest003
+ * @tc.desc: Test destroy limited runtime and unregister its worker VM before freeing it.
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, DestroyRuntimeTest003, testing::ext::TestSize.Level1)
+{
+    napi_env env = (napi_env)engine_;
+
+    napi_env newEnv = nullptr;
+    napi_status status = napi_create_limit_runtime(env, &newEnv);
+    ASSERT_EQ(status, napi_ok);
+    ASSERT_NE(newEnv, nullptr);
+    auto workerEngine = reinterpret_cast<NativeEngine*>(newEnv);
+    EXPECT_EQ(workerEngine->GetHostEngine(), engine_);
+    auto hostVM = const_cast<EcmaVM*>(engine_->GetEcmaVm());
+    auto workerVM = const_cast<EcmaVM*>(workerEngine->GetEcmaVm());
+
+    bool cleanupCalled = false;
+    workerEngine->SetCleanEnv([hostVM, workerVM, &cleanupCalled]() {
+        EXPECT_FALSE(JSNApi::DeleteWorker(hostVM, workerVM));
+        JSNApi::DestroyJSVM(workerVM);
+        cleanupCalled = true;
+    });
+
+    status = napi_destroy_runtime(newEnv);
+    ASSERT_EQ(status, napi_ok);
+    EXPECT_TRUE(cleanupCalled);
+}
+
+/**
  * @tc.name: CreateLimitRuntimeTest001
  * @tc.desc: Test create limite runtime.
  * @tc.type: FUNC
