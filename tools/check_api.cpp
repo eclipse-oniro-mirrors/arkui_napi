@@ -37,11 +37,35 @@ using namespace ohos::check;
 
 namespace {
 
+// The unknown-module json lives next to the result file and its name is derived from the
+// result file's ("result.json" -> "unknown.json", "result_xxx.json" -> "unknown_xxx.json";
+// other stems are kept, e.g. "check.json" -> "unknown_check.json"), so the two artifacts of
+// one run are always found together and parallel runs with different result files never
+// overwrite each other. Both '/' and '\\' count as directory separators (Windows runs).
+std::string DeriveUnknownFilePath(const std::string& resultFile)
+{
+    const std::string resultStem = "result";
+    size_t slash = resultFile.find_last_of("/\\");
+    size_t dirEnd = (slash == std::string::npos) ? 0 : slash + 1;
+    size_t dot = resultFile.find_last_of('.');
+    // The extension is stripped only when the last dot belongs to the file name: a dot inside
+    // the dir part or a leading hidden-file dot (dot == dirEnd) stays in the stem.
+    size_t stemEnd = (dot == std::string::npos || dot <= dirEnd) ? resultFile.size() : dot;
+    std::string stem = resultFile.substr(dirEnd, stemEnd - dirEnd);
+    if (StartsWith(stem, resultStem)) {
+        stem.erase(0, resultStem.size()); // "result_xxx" -> "_xxx", "result" -> ""
+    } else if (!stem.empty()) {
+        stem = "_" + stem; // separator so kept stems stay readable ("check" -> "unknown_check")
+    }
+    return resultFile.substr(0, dirEnd) + "unknown" + stem + ".json";
+}
+
 // Check task configuration assembled from CLI parsing (kit->files map, whitelist location, ignore sources).
 struct CheckConfig {
     std::map<std::string, std::vector<std::string>> kitFileMap;
     std::string legalDir;
     std::string resultFile;
+    std::string unknownFile; // unknown-module json, derived from resultFile
     bool whitelistIsFile = false; // legalDir is a whitelist json file (single-file mode)
     std::vector<ApiMeta> ignoreList;
     std::map<std::string, std::string> ignoreInheritMap; // inheritance map from the ignore list
@@ -112,6 +136,8 @@ void PrintUsage(const char* name)
     std::cerr << "  --skip-module <name[,name...]>        skip checking given module(s), e.g." <<
         " @ohos.util (crash isolation); summary shows skip count" << std::endl;
     std::cerr << "Note: options should be placed after positional arguments." << std::endl;
+    std::cerr << "Note: unknown modules (scan-dir) are archived next to the result file as" <<
+        " unknown*.json derived from its name (result.json -> unknown.json)." << std::endl;
 }
 
 bool FileExists(const std::string& path)
@@ -627,6 +653,7 @@ CheckErrorCode ResolveCheckInputs(const char* programName,
         config.moduleSoDir = "./module";
 #endif
     }
+    config.unknownFile = DeriveUnknownFilePath(config.resultFile);
     // --ignore-file sources (the only ignore entry point)
     for (const std::string& src : ignoreSources) {
         LoadIgnoreSource(src, config.ignoreList, config.ignoreInheritMap);
@@ -767,9 +794,15 @@ void RunKitChecks(napi_env env, const CheckConfig& config, CheckSummary& summary
             routeCtx.deprecatedMap = &deprecatedMap;
             RouteModuleResult(ret, result, routeCtx);
             // Checkpoint after each module (atomic write): a native crash mid-run keeps every
-            // result checked so far; the last log line marks the crash point.
-            SaveIllegalApiToJson(config.resultFile, illegalMap, deprecatedMap, config.unknownModules);
+            // result checked so far; the last log line marks the crash point. The unknown
+            // save applies the same omit-when-empty rule as the final output (the skip lives
+            // in SaveUnknownModulesToJson), so both paths behave identically.
+            SaveIllegalApiToJson(config.resultFile, illegalMap, deprecatedMap);
+            SaveUnknownModulesToJson(config.unknownFile, config.unknownModules);
             LogDebug() << "checkpoint written: " << config.resultFile;
+            if (!config.unknownModules.empty()) {
+                LogDebug() << "checkpoint written: " << config.unknownFile;
+            }
         }
     }
 }
@@ -811,9 +844,9 @@ void PrintDeprecatedResult(const std::map<std::string, std::map<std::string, std
 }
 
 // Prints illegal APIs line by one (hdc shell echoes stdout), then the deprecated and
-// unknown-module sections, and archives result.json. Returns the illegal-API total
-// (deprecated-bucket entries excluded).
-size_t PrintIllegalResult(const std::string& resultFile,
+// unknown-module sections, and archives the result json plus the derived unknown-module
+// json. Returns the illegal-API total (deprecated-bucket entries excluded).
+size_t PrintIllegalResult(const std::string& resultFile, const std::string& unknownFile,
                           const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& illegalMap,
                           const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& deprecatedMap,
                           const std::vector<std::string>& unknownModules)
@@ -832,8 +865,13 @@ size_t PrintIllegalResult(const std::string& resultFile,
     for (const std::string& name : unknownModules) {
         std::cout << "[unknown-module] " << name << std::endl;
     }
-    SaveIllegalApiToJson(resultFile, illegalMap, deprecatedMap, unknownModules);
+    SaveIllegalApiToJson(resultFile, illegalMap, deprecatedMap);
     LogInfo() << "非法API报告已保存: " << resultFile;
+    // omit-when-empty: no unknown.json when there is nothing to report (SaveUnknownModulesToJson)
+    SaveUnknownModulesToJson(unknownFile, unknownModules);
+    if (!unknownModules.empty()) {
+        LogInfo() << "未登记模块报告已保存: " << unknownFile;
+    }
     return illegalTotal;
 }
 
@@ -894,7 +932,7 @@ int CheckApiMain(int argc, char* argv[])
     napi_close_handle_scope(env, scope);
     DestroyArkEnv(env);
 
-    PrintIllegalResult(config.resultFile, illegalMap, deprecatedMap, config.unknownModules);
+    PrintIllegalResult(config.resultFile, config.unknownFile, illegalMap, deprecatedMap, config.unknownModules);
     PrintSummary(summary, config.unknownModules.size());
     CloseLogFile();
 

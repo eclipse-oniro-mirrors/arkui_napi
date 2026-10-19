@@ -689,11 +689,11 @@ void AddKitToJson(cJSON* root, const std::string& kitName,
     }
 }
 
-// Builds the result json tree (IllegalApis + DeprecatedModules + UnknownModules).
+// Builds the result json tree (IllegalApis + DeprecatedModules; unknown modules go to
+// their own file via SaveUnknownModulesToJson).
 cJSON* BuildResultJsonTree(
     const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& illegalMap,
-    const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& deprecatedMap,
-    const std::vector<std::string>& unknownModules)
+    const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& deprecatedMap)
 {
     cJSON* root = cJSON_CreateObject();
     if (root == nullptr) {
@@ -717,17 +717,6 @@ cJSON* BuildResultJsonTree(
             cJSON_AddItemToObject(root, "DeprecatedModules", deprecatedObj);
             for (const auto& kitEntry : deprecatedMap) {
                 AddKitToJson(deprecatedObj, kitEntry.first, kitEntry.second);
-            }
-        }
-    }
-
-    // omitted when empty to keep the old result format compatible
-    if (!unknownModules.empty()) {
-        cJSON* unknownArray = cJSON_CreateArray();
-        if (unknownArray != nullptr) {
-            cJSON_AddItemToObject(root, "UnknownModules", unknownArray);
-            for (const std::string& name : unknownModules) {
-                cJSON_AddItemToArray(unknownArray, cJSON_CreateString(name.c_str()));
             }
         }
     }
@@ -761,10 +750,54 @@ bool AtomicWriteJson(const std::string& outputFilePath, const char* jsonStr)
 CheckErrorCode SaveIllegalApiToJson(
     const std::string& outputFilePath,
     const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& illegalMap,
-    const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& deprecatedMap,
+    const std::map<std::string, std::map<std::string, std::vector<ApiMeta>>>& deprecatedMap)
+{
+    cJSON* root = BuildResultJsonTree(illegalMap, deprecatedMap);
+    if (root == nullptr) {
+        return ERROR_JSON_PARSE_FAILED;
+    }
+    char* jsonStr = cJSON_Print(root);
+    cJSON_Delete(root);
+    if (jsonStr == nullptr) {
+        return ERROR_JSON_PARSE_FAILED;
+    }
+    bool written = AtomicWriteJson(outputFilePath, jsonStr);
+    cJSON_free(jsonStr);
+    return written ? CHECK_OK : ERROR_FILE_OPEN_FAILED;
+}
+
+// Unknown-module tree: {"UnknownModules": ["name", ...]} — same section shape the old
+// result json carried, kept as the dedicated artifact's contract.
+cJSON* BuildUnknownModulesJsonTree(const std::vector<std::string>& unknownModules)
+{
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr) {
+        return nullptr;
+    }
+    cJSON* unknownArray = cJSON_CreateArray();
+    if (unknownArray == nullptr) {
+        cJSON_Delete(root);
+        return nullptr;
+    }
+    cJSON_AddItemToObject(root, "UnknownModules", unknownArray);
+    for (const std::string& name : unknownModules) {
+        cJSON_AddItemToArray(unknownArray, cJSON_CreateString(name.c_str()));
+    }
+    return root;
+}
+
+CheckErrorCode SaveUnknownModulesToJson(
+    const std::string& outputFilePath,
     const std::vector<std::string>& unknownModules)
 {
-    cJSON* root = BuildResultJsonTree(illegalMap, deprecatedMap, unknownModules);
+    // Omit-when-empty contract carried over from the old single result json (the section
+    // was skipped when empty): multi/single-file runs have no scan misses and must not
+    // leave a {"UnknownModules": []} artifact behind. Both the per-module checkpoint and
+    // the final save go through this rule, so the two paths stay consistent.
+    if (unknownModules.empty()) {
+        return CHECK_OK;
+    }
+    cJSON* root = BuildUnknownModulesJsonTree(unknownModules);
     if (root == nullptr) {
         return ERROR_JSON_PARSE_FAILED;
     }
