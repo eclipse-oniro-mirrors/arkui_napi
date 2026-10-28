@@ -312,6 +312,7 @@ public:
     size_t GetHeapTotalSize() override;
     size_t GetHeapUsedSize() override;
     size_t GetHeapObjectSize() override;
+    size_t GetSharedHeapSize() override;
     size_t GetHeapLimitSize() override;
     size_t GetProcessHeapLimitSize() override;
     size_t GetGCCount() override;

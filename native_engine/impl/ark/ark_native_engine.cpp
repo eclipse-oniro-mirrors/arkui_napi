@@ -2972,6 +2972,11 @@ size_t ArkNativeEngine::GetHeapObjectSize()
     return DFXJSNApi::GetHeapObjectSize(vm_);
 }
 
+size_t ArkNativeEngine::GetSharedHeapSize()
+{
+    return DFXJSNApi::GetSharedHeapSize();
+}
+
 size_t ArkNativeEngine::GetHeapLimitSize()
 {
     return DFXJSNApi::GetHeapLimitSize(vm_);
@@ -3113,6 +3118,12 @@ size_t ArkNativeEngine::GetHeapUsedSize()
 }
 
 size_t ArkNativeEngine::GetHeapObjectSize()
+{
+    HILOG_WARN("ARK does not support dfx on windows");
+    return 0;
+}
+
+size_t ArkNativeEngine::GetSharedHeapSize()
 {
     HILOG_WARN("ARK does not support dfx on windows");
     return 0;
