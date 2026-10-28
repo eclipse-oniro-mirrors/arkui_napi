@@ -14947,9 +14947,7 @@ HWTEST_F(NapiBasicTest, NapiEncodeTest001, testing::ext::TestSize.Level1)
 
     ASSERT_EQ(srcLength, 14); // 14:string length
     char* res = reinterpret_cast<char*>(srcData);
-
-    res[srcLength] = 0;
-    ASSERT_STREQ(res, expected);
+    ASSERT_EQ(std::string_view(res, srcLength), std::string_view(expected));
 }
 
 /**
