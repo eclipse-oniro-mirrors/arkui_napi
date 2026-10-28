@@ -2687,7 +2687,7 @@ NAPI_EXTERN napi_status napi_close_handle_scope(napi_env env, napi_handle_scope 
 
 NAPI_EXTERN napi_status napi_open_microtask_scope(napi_env env, napi_microtask_scope* scope)
 {
-    CHECK_ENV(env);
+    NAPI_PREAMBLE(env);
     CHECK_ARG(env, scope);
 
     auto engine = reinterpret_cast<NativeEngine*>(env);
@@ -2697,7 +2697,7 @@ NAPI_EXTERN napi_status napi_open_microtask_scope(napi_env env, napi_microtask_s
     }
 
     *scope = reinterpret_cast<napi_microtask_scope>(new panda::JsiMicrotaskScope(engine->GetEcmaVm()));
-    return napi_clear_last_error(env);
+    return GET_RETURN_STATUS(env);
 }
 
 NAPI_EXTERN napi_status napi_close_microtask_scope(napi_env env, napi_microtask_scope scope)
@@ -2712,6 +2712,11 @@ NAPI_EXTERN napi_status napi_close_microtask_scope(napi_env env, napi_microtask_
     }
 
     delete reinterpret_cast<panda::JsiMicrotaskScope*>(scope);
+    if (UNLIKELY(panda::JSNApi::HasPendingException(engine->GetEcmaVm()))) {
+        HILOG_WARN("pending exception after microtask scope closed, print exception info: ");
+        panda::JSNApi::PrintExceptionInfo(engine->GetEcmaVm());
+        return napi_set_last_error(env, napi_pending_exception);
+    }
     return napi_clear_last_error(env);
 }
 

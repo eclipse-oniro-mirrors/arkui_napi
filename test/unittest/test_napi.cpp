@@ -11265,6 +11265,91 @@ HWTEST_F(NapiBasicTest, MicrotaskScopeSuppressTest004, testing::ext::TestSize.Le
 }
 
 /**
+ * @tc.name: NapiCloseMicrotaskScopeTest
+ * @tc.desc: Test napi_close_microtask_scope reports napi_pending_exception when an
+ *           exception is already pending on the VM while the scope is closed, which is
+ *           the common error-handling / RAII cleanup path
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiCloseMicrotaskScopeTest003, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    ASSERT_CHECK_CALL(napi_throw_error(env, nullptr, "error while microtask scope open"));
+
+    auto res = napi_close_microtask_scope(env, scope);
+    ASSERT_EQ(res, napi_pending_exception);
+
+    const napi_extended_error_info* errorInfo = nullptr;
+    ASSERT_CHECK_CALL(napi_get_last_error_info(env, &errorInfo));
+    ASSERT_NE(errorInfo, nullptr);
+    ASSERT_EQ(errorInfo->error_code, napi_pending_exception);
+
+    auto repeat = napi_close_microtask_scope(env, scope);
+    ASSERT_EQ(repeat, napi_invalid_arg);
+
+    bool hasPending = false;
+    ASSERT_CHECK_CALL(napi_is_exception_pending(env, &hasPending));
+    ASSERT_TRUE(hasPending);
+
+    napi_value exception = nullptr;
+    ASSERT_CHECK_CALL(napi_get_and_clear_last_exception(env, &exception));
+}
+
+/**
+ * @tc.name: NapiCloseMicrotaskScopeTest
+ * @tc.desc: Test a throwing then-handler drained at close does not surface as
+ *           napi_pending_exception: the promise machinery catches the throw and
+ *           converts it into a rejection of the derived promise
+ * @tc.type: FUNC
+ */
+HWTEST_F(NapiBasicTest, NapiCloseMicrotaskScopeTest004, testing::ext::TestSize.Level1)
+{
+    ASSERT_NE(engine_, nullptr);
+    napi_env env = reinterpret_cast<napi_env>(engine_);
+
+    napi_deferred deferred = nullptr;
+    napi_value promise = nullptr;
+    ASSERT_CHECK_CALL(napi_create_promise(env, &deferred, &promise));
+
+    napi_value callback = nullptr;
+    auto onFulfilled = [](napi_env env, napi_callback_info info) -> napi_value {
+        napi_throw_error(env, nullptr, "uncaught error in then handler");
+        return nullptr;
+    };
+    ASSERT_CHECK_CALL(napi_create_function(env, "onFulfilled", NAPI_AUTO_LENGTH, onFulfilled,
+        nullptr, &callback));
+
+    napi_value key = nullptr;
+    napi_value thenFunction = nullptr;
+    ASSERT_CHECK_CALL(napi_create_string_utf8(env, "then", NAPI_AUTO_LENGTH, &key));
+    ASSERT_CHECK_CALL(napi_get_property(env, promise, key, &thenFunction));
+
+    napi_microtask_scope scope = nullptr;
+    ASSERT_CHECK_CALL(napi_open_microtask_scope(env, &scope));
+
+    napi_value callResult = nullptr;
+    ASSERT_CHECK_CALL(napi_call_function(env, promise, thenFunction, 1, &callback, &callResult));
+    napi_value resolution = nullptr;
+    ASSERT_CHECK_CALL(napi_create_int32(env, 1, &resolution));
+    ASSERT_CHECK_CALL(napi_resolve_deferred(env, deferred, resolution));
+
+    auto res = napi_close_microtask_scope(env, scope);
+    ASSERT_EQ(res, napi_ok);
+
+    bool hasPending = true;
+    ASSERT_CHECK_CALL(napi_is_exception_pending(env, &hasPending));
+    ASSERT_FALSE(hasPending);
+
+    napi_value exception = nullptr;
+    ASSERT_CHECK_CALL(napi_get_and_clear_last_exception(env, &exception));
+}
+
+/**
  * @tc.name: NapiOpenEscapableHandleScopeTest
  * @tc.desc: Test interface of napi_open_escapable_handle_scope
  * @tc.type: FUNC
