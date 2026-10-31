@@ -373,6 +373,7 @@ void NativeModuleManager::Register(NativeModule* nativeModule)
         tailNativeModule_->moduleName = nullptr;  /* we update moduleName later */
         tailNativeModule_->refCount = nativeModule->refCount;
         tailNativeModule_->registerCallback = nativeModule->registerCallback;
+        tailNativeModule_->shared = nativeModule->shared;
         tailNativeModule_->getJSCode = nativeModule->getJSCode;
         tailNativeModule_->getABCCode = nativeModule->getABCCode;
         tailNativeModule_->next = nullptr;
@@ -395,6 +396,7 @@ void NativeModuleManager::Register(NativeModule* nativeModule)
         headNativeModule_->name = moduleName;
         headNativeModule_->refCount = nativeModule->refCount;
         headNativeModule_->registerCallback = nativeModule->registerCallback;
+        headNativeModule_->shared = nativeModule->shared;
         headNativeModule_->getJSCode = nativeModule->getJSCode;
         headNativeModule_->getABCCode = nativeModule->getABCCode;
         headNativeModule_->moduleLoaded = true;
