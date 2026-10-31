@@ -61,6 +61,7 @@ struct NativeModule {
     const char* fileName = nullptr;
     const char* systemFilePath = nullptr;
     RegisterCallback registerCallback = nullptr;
+    unsigned int shared = 0;
     GetJSCodeCallback getABCCode = nullptr;
     GetJSCodeCallback getJSCode = nullptr;
     int32_t version = 0;

@@ -211,6 +211,13 @@ NAPI_EXTERN napi_status napi_delete_strong_sendable_reference(napi_env env,
 NAPI_EXTERN napi_status napi_get_strong_sendable_reference_value(napi_env env,
                                                                  napi_sendable_ref ref,
                                                                  napi_value* result);
+/*
+ * Register a sendable shared NAPI module. The module's registerCallback must
+ * return a complete sendable export root; native init runs once process-wide
+ * and the root is shared across worker threads. Replaces napi_module_register
+ * for shared modules.
+ */
+NAPI_EXTERN void napi_shared_module_register(napi_module* mod);
 // ======================================== sendable api end ======================================== //
 
 // ======================================== multiple-context ======================================== //

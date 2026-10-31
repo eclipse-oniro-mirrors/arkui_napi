@@ -18,6 +18,7 @@
 
 #include "ecmascript/napi/include/jsnapi.h"
 #include "ecmascript/napi/include/jsnapi_expo.h"
+#include "module_manager/native_module_manager.h"
 #include "native_api_internal.h"
 #include "native_engine/impl/ark/ark_native_reference.h"
 #include "native_engine/impl/ark/ark_sendable_native_reference.h"
@@ -5066,4 +5067,24 @@ NAPI_EXTERN napi_status napi_get_strong_sendable_reference_value(napi_env env,
     }
     *result = value;
     return napi_clear_last_error(env);
+}
+
+NAPI_EXTERN void napi_shared_module_register(napi_module* mod)
+{
+    if (mod == nullptr) {
+        HILOG_ERROR("mod is nullptr");
+        return;
+    }
+
+    NativeModuleManager* moduleManager = NativeModuleManager::GetInstance();
+    NativeModule module;
+
+    module.version = mod->nm_version;
+    module.fileName = mod->nm_filename;
+    module.name = mod->nm_modname;
+    module.flags = mod->nm_flags;
+    module.shared = 1;
+    module.registerCallback = (RegisterCallback)mod->nm_register_func;
+
+    moduleManager->Register(&module);
 }
