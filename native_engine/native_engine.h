@@ -130,6 +130,7 @@ using AppFreezeFilterCallback = std::function<bool(const int32_t pid, const bool
 using EcmaVM = panda::ecmascript::EcmaVM;
 using JsFrameInfo = panda::ecmascript::JsFrameInfo;
 using HeapMemoryInfo = panda::ecmascript::HeapMemoryInfo;
+using UrgencyLevel = panda::JSNApi::UrgencyLevel;
 using NapiOnWorkerErrorCallback = std::function<bool(napi_env env,
     napi_value exception, std::string name, uint32_t type)>;
 using NapiOnMainThreadErrorCallback = std::function<bool(napi_env env,
@@ -311,6 +312,7 @@ public:
     virtual bool EnableLocalHandleDetection() = 0;
     // One-way enable of the proportional handle/primitive storage shrink (PR #15032).
     virtual void EnableHandleMemoryOptimization() {}
+    virtual void HintGC(UrgencyLevel level) = 0;
     virtual void GetHybridStackTraceForCrash(napi_env env, std::string &stackTraceStr) = 0;
     virtual void GetJsonExtraInfoForCrash(napi_env env, std::string &jsonStr, uint32_t &position) = 0;
     virtual void SerializeJSError(napi_env env, napi_value object,
