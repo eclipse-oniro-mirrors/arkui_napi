@@ -542,7 +542,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing:
 
 /**
  * @tc.name: ValidEngineCheckReportTest001
- * @tc.desc: Test both ValidEngineCheck mismatch paths report through
+ * @tc.desc: Test both VALID_ENGINE_CHECK mismatch paths report through
  *           signal 42 with the fault message prefix when the cross-thread
  *           check is disabled (soft-report branch)
  * @tc.type: FUNC
@@ -556,17 +556,17 @@ HWTEST_F(MultiThreadErrorTest, ValidEngineCheckReportTest001, testing::ext::Test
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    ASSERT_FALSE(ValidEngineCheck(engine_, nullptr, 0, "Func", "File.cpp", 12));
+    ASSERT_FALSE(VALID_ENGINE_CHECK(engine_, nullptr, 0));
     ASSERT_EQ(g_signalCount, 1);
-    const std::string ownerPrefix = "param env not equal to its owner. Func at File.cpp:12";
+    const std::string ownerPrefix = "param env not equal to its owner.";
     ASSERT_EQ(std::string(g_capturedMsg).substr(0, ownerPrefix.size()), ownerPrefix);
 
     ResetCapture();
     uint64_t ownerId = engine_->GetId() + 1;
-    ASSERT_FALSE(ValidEngineCheck(engine_, engine_, ownerId, "Func", "File.cpp", 13));
+    ASSERT_FALSE(VALID_ENGINE_CHECK(engine_, engine_, ownerId));
     ASSERT_EQ(g_signalCount, 1);
     const std::string destroyedPrefix = "owner env has been destroyed, owner id: " + std::to_string(ownerId) +
-        ", current env id: " + std::to_string(engine_->GetId()) + ". Func at File.cpp:13";
+        ", current env id: " + std::to_string(engine_->GetId()) + ".";
     ASSERT_EQ(std::string(g_capturedMsg).substr(0, destroyedPrefix.size()), destroyedPrefix);
 }
 

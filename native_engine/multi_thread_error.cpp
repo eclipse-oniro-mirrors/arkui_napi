@@ -84,17 +84,14 @@ struct MultiThreadDebugMsg {
 };
 
 #if defined(__aarch64__)
-static long Syscall(unsigned long n, unsigned long a, unsigned long b, unsigned long c, unsigned long d,
-                    unsigned long e, unsigned long f)
+static long Syscall(unsigned long n, unsigned long a, unsigned long b, unsigned long c, unsigned long d)
 {
     register unsigned long x8 asm("x8") = n;
     register unsigned long x0 asm("x0") = a;
     register unsigned long x1 asm("x1") = b;
     register unsigned long x2 asm("x2") = c;
     register unsigned long x3 asm("x3") = d;
-    register unsigned long x4 asm("x4") = e;
-    register unsigned long x5 asm("x5") = f;
-    asm volatile("svc 0" : "=r"(x0) : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5)
+    asm volatile("svc 0" : "=r"(x0) : "r"(x8), "0"(x0), "r"(x1), "r"(x2), "r"(x3)
                  : "memory", "cc");
     return x0;
 }
@@ -173,10 +170,10 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
     info.si_value.sival_ptr = &debugMessage;
 
 #if defined(__aarch64__)
-    pid_t tid = static_cast<pid_t>(Syscall(__NR_gettid, 0, 0, 0, 0, 0, 0));
+    pid_t tid = static_cast<pid_t>(Syscall(__NR_gettid, 0, 0, 0, 0));
     if (Syscall(__NR_rt_tgsigqueueinfo, static_cast<unsigned long>(getpid()),
                 static_cast<unsigned long>(tid), static_cast<unsigned long>(signo),
-                reinterpret_cast<unsigned long>(&info), 0, 0) == -1) {
+                reinterpret_cast<unsigned long>(&info)) == -1) {
 #else
     if (syscall(SYS_rt_tgsigqueueinfo, getpid(), syscall(SYS_gettid), signo, &info) == -1) {
 #endif
