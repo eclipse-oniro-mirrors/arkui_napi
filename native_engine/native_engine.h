@@ -473,6 +473,7 @@ public:
     virtual size_t GetHeapTotalSize() = 0;
     virtual size_t GetHeapUsedSize() = 0;
     virtual size_t GetHeapObjectSize() = 0;
+    virtual size_t GetSharedHeapSize() = 0;
     virtual size_t GetHeapLimitSize() = 0;
     virtual size_t GetProcessHeapLimitSize() = 0;
     virtual size_t GetGCCount() = 0;
