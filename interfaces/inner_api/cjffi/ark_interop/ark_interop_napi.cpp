@@ -316,7 +316,7 @@ ARKTS_Value ARKTS_CreateFunc(ARKTS_Env env, int64_t lambdaId)
     ARKTS_ASSERT_U(env, "env is null");
 
     auto vm = P_CAST(env, EcmaVM*);
-    auto result = FunctionRef::New(vm, CJLambdaInvoker, CJLambdaDeleter, new LambdaData {env, lambdaId}, true);
+    auto result = FunctionRef::New(vm, CJLambdaInvoker, CJLambdaDeleter, new LambdaData {env, lambdaId}, false);
 
     return ARKTS_Scope_::NewValue(env, result);
 }
@@ -342,7 +342,7 @@ ARKTS_Value ARKTS_CreateClass(ARKTS_Env env, int64_t lambdaId, ARKTS_Value base)
     auto vm = P_CAST(env, EcmaVM*);
 
     auto result = FunctionRef::NewClassFunction(vm, CJLambdaInvoker, CJLambdaDeleter,
-                                                new LambdaData {env, lambdaId}, true);
+                                                new LambdaData {env, lambdaId}, false);
 
     if (ARKTS_IsClass(env, base)) {
         panda::JsiFastNativeScope fastNativeScope(vm);
