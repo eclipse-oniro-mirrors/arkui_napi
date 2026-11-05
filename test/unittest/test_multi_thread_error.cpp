@@ -250,6 +250,26 @@ HWTEST_F(MultiThreadErrorTest, FormatHilogMsgTest001, testing::ext::TestSize.Lev
     ASSERT_EQ(FormatHilogMsg("%{public}s", big.c_str()), "%s");
 }
 
+/**
+ * @tc.name: FormatHilogMsgPrivateRejectTest001
+ * @tc.desc: Test FormatHilogMsg refuses to render formats containing
+ *           private hilog directives: the raw format text is returned
+ *           without any argument value so the result can never bypass
+ *           hilog privacy masking when logged as a public string
+ * @tc.type: FUNC
+ */
+HWTEST_F(MultiThreadErrorTest, FormatHilogMsgPrivateRejectTest001, testing::ext::TestSize.Level1)
+{
+    std::string result = FormatHilogMsg("secret count: %{private}" PRIu64, 42ULL);
+    ASSERT_EQ(result, "secret count: %{private}" PRIu64);
+    ASSERT_EQ(result.find("42"), std::string::npos);
+
+    result = FormatHilogMsg("%{public}s leak: %{private}s", "public-value", "secret-value");
+    ASSERT_EQ(result, "%{public}s leak: %{private}s");
+    ASSERT_EQ(result.find("public-value"), std::string::npos);
+    ASSERT_EQ(result.find("secret-value"), std::string::npos);
+}
+
 #if defined(OHOS_PLATFORM)
 /**
  * @tc.name: NotifyMultiThreadErrorTest001
@@ -336,6 +356,39 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest003, testing::ext::Test
     ResetCapture();
     NotifyMultiThreadError(engine_, "interval gate");
     ASSERT_EQ(g_signalCount, 1);
+}
+
+/**
+ * @tc.name: NotifyMultiThreadErrorDeferredDeliveryTest001
+ * @tc.desc: Test the signal payload stays valid when signal 42 is blocked on
+ *           the calling thread: the report stays pending and the handler
+ *           reads the exact message after the thread unblocks the signal,
+ *           instead of dereferencing a dangling stack pointer
+ * @tc.type: FUNC
+ */
+HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorDeferredDeliveryTest001, testing::ext::TestSize.Level1)
+{
+    DetectionConfigGuard configGuard;
+    SignalHandlerGuard handlerGuard;
+    SetDetectionConfigForTest(1, 0);
+
+    constexpr int multiThreadErrorSigno = 42;
+    sigset_t blockSet;
+    sigset_t oldSet;
+    sigemptyset(&blockSet);
+    sigaddset(&blockSet, multiThreadErrorSigno);
+    ASSERT_EQ(pthread_sigmask(SIG_BLOCK, &blockSet, &oldSet), 0);
+
+    ResetCapture();
+    NotifyMultiThreadError(engine_, "deferred delivery");
+    int pendingCount = g_signalCount;
+    ASSERT_EQ(pthread_sigmask(SIG_SETMASK, &oldSet, nullptr), 0);
+
+    ASSERT_EQ(pendingCount, 0);
+    ASSERT_EQ(g_signalCount, 1);
+    ASSERT_STREQ(g_capturedMsg, "deferred delivery");
+    ASSERT_EQ(g_capturedSiCode, -4);
+    ASSERT_EQ(g_handlerTid, static_cast<uint64_t>(NativeEngine::GetCurSysTid()));
 }
 
 /**

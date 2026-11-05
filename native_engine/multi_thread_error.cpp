@@ -16,8 +16,10 @@
 #include "multi_thread_error.h"
 
 #include <cstdarg>
+#include <cstring>
 
 #include "securec.h"
+#include "utils/log.h"
 
 std::string ConvertHilogToFmt(const char* hilogFmt)
 {
@@ -47,6 +49,14 @@ std::string ConvertHilogToFmt(const char* hilogFmt)
 
 std::string FormatHilogMsg(const char* hilogFmt, ...)
 {
+    if (hilogFmt == nullptr) {
+        return "";
+    }
+    if (strstr(hilogFmt, "%{private}") != nullptr) {
+        HILOG_WARN("FormatHilogMsg does not support private hilog directive, message is not formatted "
+                   "to avoid bypassing hilog privacy masking, fmt: %{public}s", hilogFmt);
+        return hilogFmt;
+    }
     std::string fmt = ConvertHilogToFmt(hilogFmt);
     constexpr size_t maxMsgSize = 4096;
     std::string msg(maxMsgSize, '\0');
@@ -82,6 +92,10 @@ struct MultiThreadDebugMsg {
     uint64_t timestamp;
     const char *msg;
 };
+
+constexpr size_t MAX_DEBUG_MSG_LEN = 8192;
+thread_local MultiThreadDebugMsg g_debugMsg = {0, nullptr};
+thread_local char g_debugMsgBuf[MAX_DEBUG_MSG_LEN] = {0};
 
 #if defined(__aarch64__)
 static long Syscall(unsigned long n, unsigned long a, unsigned long b, unsigned long c, unsigned long d)
@@ -166,12 +180,23 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
         return;
     }
 
-    MultiThreadDebugMsg debugMessage = {now, msg.c_str()};
+    size_t msgLen = msg.size();
+    if (msgLen > MAX_DEBUG_MSG_LEN - 1) {
+        msgLen = MAX_DEBUG_MSG_LEN - 1;
+    }
+    if (memcpy_s(g_debugMsgBuf, MAX_DEBUG_MSG_LEN, msg.data(), msgLen) != EOK) {
+        HILOG_ERROR("copy multi-thread fault message failed");
+        return;
+    }
+    g_debugMsgBuf[msgLen] = '\0';
+    g_debugMsg.timestamp = now;
+    g_debugMsg.msg = g_debugMsgBuf;
 
     static constexpr int siCode = -4;
-    siginfo_t info;
+    siginfo_t info = {};
+    info.si_signo = signo;
     info.si_code = siCode;
-    info.si_value.sival_ptr = &debugMessage;
+    info.si_value.sival_ptr = &g_debugMsg;
 
 #if defined(__aarch64__)
     pid_t tid = static_cast<pid_t>(Syscall(__NR_gettid, 0, 0, 0, 0));
