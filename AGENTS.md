@@ -22,7 +22,16 @@
 
 ### 子级规则
 
-本仓库当前无子级 AGENTS.md / CLAUDE.md，本文件为唯一入口。如 `module_manager/`、`interfaces/inner_api/cjffi/`、`native_engine/impl/ark/` 等子目录后续需要更细规则，应新增子级 AGENTS.md 并在此声明，避免规则散落在多入口而失同步。
+本文件是全局入口与唯一的路由表；目录级细节写在该目录的 AGENTS.md，并在此声明，避免规则散落在多入口而失同步。
+
+当前存在的子级 AGENTS.md：
+
+| 子级文档 | 作用域 | 何时读 |
+| --- | --- | --- |
+| `native_engine/AGENTS.md` | `native_engine/`（抽象层 + 门面 + `impl/ark/`）：文件清单、`napi_sources` 接线、门面宏约束、邻居边界、改动→测试映射 | 改动 `native_engine/` 下任何文件前先读它，再走 §3 的知识路由 |
+| `test/AGENTS.md` | `test/unittest/` + `test/fuzztest/`：接线三段式（sources → group → 运行）、HWTEST 约定、脚手架复用、未接线文件与历史残留清单 | 新增/修改测试，或需要为改动挑选验证用例时 |
+
+`module_manager/`、`interfaces/inner_api/cjffi/` 等其余子目录尚未有子级 AGENTS.md；如后续需要更细规则，新增后必须在上表登记，并同步 §3.2 的路由行。
 
 ## 2. 构建和测试
 
@@ -89,8 +98,9 @@ env -C //test/testfwk/developer_test/src \
 
 | 修改路径 | 先读 |
 | --- | --- |
-| `native_engine/`（基类与抽象层） | `docs/knowledge/engine.md` + `docs/knowledge/napi-differences.md` |
-| `native_engine/impl/ark/` | `docs/knowledge/engine.md` |
+| `native_engine/`（含 `impl/ark/`） | `native_engine/AGENTS.md`（目录级接线与约束）→ 再走下面对应知识文件 |
+| `native_engine/`（基类与抽象层） | `native_engine/AGENTS.md` + `docs/knowledge/engine.md` + `docs/knowledge/napi-differences.md` |
+| `native_engine/impl/ark/` | `native_engine/AGENTS.md` + `docs/knowledge/engine.md` |
 | `module_manager/` | `docs/knowledge/module-manager.md` |
 | `interfaces/inner_api/cjffi/` | `docs/knowledge/cjffi.md` |
 | `native_engine/impl/ark/cj_support.*` | `docs/knowledge/cjffi.md`（互操作两端须同步） |
@@ -100,7 +110,7 @@ env -C //test/testfwk/developer_test/src \
 | `utils/`（含 `platform/`、`data_protector.*`、`log.*`） | `docs/knowledge/build-platform.md` |
 | `callback_scope_manager/` | `docs/knowledge/engine.md` |
 | `reference_manager/` | `docs/knowledge/engine.md` + `docs/knowledge/napi-differences.md` |
-| `test/unittest/`、`test/fuzztest/` | 对应领域文件的「测试锚点」段 |
+| `test/unittest/`、`test/fuzztest/` | `test/AGENTS.md`（接线三段式 + 未接线文件清单）+ 对应领域文件的「测试锚点」段 |
 
 ### 3.3 术语→文件（vocabulary-based）
 
