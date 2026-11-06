@@ -437,6 +437,28 @@ HWTEST_F(MultiThreadErrorTest, LogIfSpecialIntegrationTest001, testing::ext::Tes
 }
 
 /**
+ * @tc.name: LogIfSpecialNullEngineTest001
+ * @tc.desc: Test the LOG_IF_SPECIAL else-branch with a null engine: the report
+ *           skips the hybrid stack and appends the backtrace-failure marker,
+ *           and NotifyMultiThreadError's null path bypasses both gates so the
+ *           signal is still delivered
+ * @tc.type: FUNC
+ */
+HWTEST_F(MultiThreadErrorTest, LogIfSpecialNullEngineTest001, testing::ext::TestSize.Level1)
+{
+    DetectionConfigGuard configGuard;
+    SignalHandlerGuard handlerGuard;
+    SetDetectionConfigForTest(1000000, 1440);
+
+    ResetCapture();
+    LOG_IF_SPECIAL(nullptr, false, "null engine report");
+
+    ASSERT_EQ(g_signalCount, 1);
+    ASSERT_NE(std::string(g_capturedMsg).find("null engine report"), std::string::npos);
+    ASSERT_NE(std::string(g_capturedMsg).find("Failed to backtrace."), std::string::npos);
+}
+
+/**
  * @tc.name: NotifyMultiThreadErrorFrequencyDisabledTest001
  * @tc.desc: Test the frequency gate bypass: frequency < 1 disables the gate
  *           so consecutive detections are all reported
@@ -641,16 +663,16 @@ HWTEST_F(MultiThreadErrorTest, LogIfSpecialFatalBranchTest001, testing::ext::Tes
 
 /**
  * @tc.name: NotifyMultiThreadErrorThrottleLogTest001
- * @tc.desc: Test the gates log the suppression reason at debug level: a
+ * @tc.desc: Test the gates log the suppression reason at info level: a
  *           detection blocked by the frequency gate or the interval gate
- *           emits a hilog debug line while no signal is sent
+ *           emits a hilog info line while no signal is sent
  * @tc.type: FUNC
  */
 HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorThrottleLogTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
-    LoggerCollector collector(LogLevel::LOG_DEBUG);
+    LoggerCollector collector(LogLevel::LOG_INFO);
     SetDetectionConfigForTest(2, 0);
 
     ResetCapture();

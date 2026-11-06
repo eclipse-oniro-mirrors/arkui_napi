@@ -100,18 +100,19 @@ static inline napi_status napi_set_last_error(napi_env env,
                 HILOG_ERROR("current napi interface cannot run in multi-thread, "                         \
                             "thread id: %{public}d, current thread id: %{public}d"                        \
                             "\n%{public}s",                                                               \
-                            engine->GetSysTid(), tid, backtrace ? stack.c_str() : "Faild to backtrace."); \
+                            engine->GetSysTid(), tid, backtrace ? stack.c_str() : "Failed to backtrace."); \
             };                                                                                            \
         };                                                                                                \
     } while (0)
 
 static inline void ReportMultiThreadFault(NativeEngine* engine, const std::string& msg)
 {
+    NativeEngine* liveEngine = (engine != nullptr && NativeEngine::IsAlive(engine)) ? engine : nullptr;
     std::string stack;
-    bool backtrace = DumpHybridStack(engine->GetEcmaVm(), stack, 0, 8);
-    std::string fullMsg = msg + "\n" + (backtrace ? stack : "Faild to backtrace.");
+    bool backtrace = liveEngine != nullptr && DumpHybridStack(liveEngine->GetEcmaVm(), stack, 0, 8);
+    std::string fullMsg = msg + "\n" + (backtrace ? stack : "Failed to backtrace.");
     HILOG_ERROR("%{public}s", fullMsg.c_str());
-    NotifyMultiThreadError(engine, fullMsg);
+    NotifyMultiThreadError(liveEngine, fullMsg);
 }
 
 #define LOG_IF_SPECIAL(engine, condition, fmt, ...)                             \
