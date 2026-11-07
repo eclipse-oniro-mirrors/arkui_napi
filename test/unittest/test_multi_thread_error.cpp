@@ -663,16 +663,16 @@ HWTEST_F(MultiThreadErrorTest, LogIfSpecialFatalBranchTest001, testing::ext::Tes
 
 /**
  * @tc.name: NotifyMultiThreadErrorThrottleLogTest001
- * @tc.desc: Test the gates log the suppression reason at info level: a
+ * @tc.desc: Test the gates log the suppression reason at error level: a
  *           detection blocked by the frequency gate or the interval gate
- *           emits a hilog info line while no signal is sent
+ *           emits a hilog error line while no signal is sent
  * @tc.type: FUNC
  */
 HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorThrottleLogTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
-    LoggerCollector collector(LogLevel::LOG_INFO);
+    LoggerCollector collector(LogLevel::LOG_ERROR);
     SetDetectionConfigForTest(2, 0);
 
     ResetCapture();

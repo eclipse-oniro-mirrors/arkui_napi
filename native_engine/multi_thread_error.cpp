@@ -163,11 +163,11 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
     uint64_t now = NowMs();
     if (engine != nullptr) {
         if (!CheckCountNum(engine->GetDetectionFrequency())) {
-            HILOG_INFO("multi-thread fault not reported to faultlogger: blocked by frequency gate");
+            HILOG_ERROR("multi-thread fault not reported to faultlogger: blocked by frequency gate");
             return;
         }
         if (!CheckTimeInterval(now, engine->GetDetectionInterval())) {
-            HILOG_INFO("multi-thread fault not reported to faultlogger: blocked by interval gate");
+            HILOG_ERROR("multi-thread fault not reported to faultlogger: blocked by interval gate");
             return;
         }
     } else {
