@@ -2937,6 +2937,11 @@ bool ArkNativeEngine::EnableLocalHandleDetection()
     return true;
 }
 
+void ArkNativeEngine::EnableHandleMemoryOptimization()
+{
+    JSNApi::EnableHandleMemoryOptimization(vm_);
+}
+
 void ArkNativeEngine::GetHybridStackTraceForCrash(napi_env env, std::string &stackTraceStr)
 {
     auto vm = reinterpret_cast<NativeEngine*>(env)->GetEcmaVm();
