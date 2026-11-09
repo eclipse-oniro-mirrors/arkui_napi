@@ -188,6 +188,16 @@ private:
     int64_t frequency_ = 100;
     int64_t interval_ = 5;
 };
+
+class SoftReportEngine final : public ArkNativeEngine {
+public:
+    SoftReportEngine(EcmaVM* vm, void* jsEngine) : ArkNativeEngine(vm, jsEngine) {}
+
+    bool IsCrossThreadCheckEnabled() const override
+    {
+        return false;
+    }
+};
 #endif // OHOS_PLATFORM
 } // namespace
 
@@ -618,30 +628,40 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing:
 /**
  * @tc.name: ValidEngineCheckReportTest001
  * @tc.desc: Test both VALID_ENGINE_CHECK mismatch paths report through
- *           signal 42 with the fault message prefix when the cross-thread
- *           check is disabled (soft-report branch)
+ *           signal 42 with the fault message prefix when the engine reports
+ *           the cross-thread check as disabled (soft-report branch)
  * @tc.type: FUNC
  */
 HWTEST_F(MultiThreadErrorTest, ValidEngineCheckReportTest001, testing::ext::TestSize.Level1)
 {
-    ASSERT_NE(engine_, nullptr);
-    ASSERT_FALSE(engine_->IsCrossThreadCheckEnabled());
+    panda::RuntimeOption option;
+    option.SetArkProperties(0x105c);
+    option.SetGcType(panda::RuntimeOption::GC_TYPE::GEN_GC);
+    const int64_t poolSize = 0x1000000;
+    option.SetGcPoolSize(poolSize);
+    option.SetLogLevel(panda::RuntimeOption::LOG_LEVEL::ERROR);
+    option.SetDebuggerLibraryPath("");
+    EcmaVM* vm = panda::JSNApi::CreateJSVM(option);
+    ASSERT_NE(vm, nullptr);
+    SoftReportEngine engine(vm, nullptr);
+    engine.SetCleanEnv([vm]() { panda::JSNApi::DestroyJSVM(vm); });
+    ASSERT_FALSE(engine.IsCrossThreadCheckEnabled());
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    ASSERT_FALSE(VALID_ENGINE_CHECK(engine_, nullptr, 0));
+    ASSERT_FALSE(VALID_ENGINE_CHECK(&engine, nullptr, 0));
     ASSERT_EQ(g_signalCount, 1);
     const std::string ownerPrefix = "param env not equal to its owner.";
     ASSERT_EQ(std::string(g_capturedMsg).substr(0, ownerPrefix.size()), ownerPrefix);
 
     ResetCapture();
-    uint64_t ownerId = engine_->GetId() + 1;
-    ASSERT_FALSE(VALID_ENGINE_CHECK(engine_, engine_, ownerId));
+    uint64_t ownerId = engine.GetId() + 1;
+    ASSERT_FALSE(VALID_ENGINE_CHECK(&engine, &engine, ownerId));
     ASSERT_EQ(g_signalCount, 1);
     const std::string destroyedPrefix = "owner env has been destroyed, owner id: " + std::to_string(ownerId) +
-        ", current env id: " + std::to_string(engine_->GetId()) + ".";
+        ", current env id: " + std::to_string(engine.GetId()) + ".";
     ASSERT_EQ(std::string(g_capturedMsg).substr(0, destroyedPrefix.size()), destroyedPrefix);
 }
 
