@@ -63,9 +63,11 @@ NAPI_EXTERN napi_status napi_check_object_type_tag(napi_env env,
                                                    const napi_type_tag* type_tag,
                                                    bool* result);
 
+#ifdef NAPI_DECLARE_ADJUST_EXTERNAL_MEMORY
 NAPI_INNER_EXTERN napi_status napi_adjust_external_memory(napi_env env,
                                                           int64_t change_in_bytes,
                                                           int64_t* adjusted_value);
+#endif
 
 #ifdef __cplusplus
 extern "C" {
