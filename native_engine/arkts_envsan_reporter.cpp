@@ -24,7 +24,7 @@
 // Strip HILOG privacy tags from a HILOG-style format string, producing a plain
 // printf format: every complete "%{xxx}" tag ("%{public}", "%{private}",
 // "%{limit}", ...) collapses into a bare '%', all other text is kept as-is.
-// Conversion examples:
+// Example conversions, shown as before and after pairs.
 //   before: "%{public}s at %{public}s:%{public}d"   after: "%s at %s:%d"
 //   before: "%{private}llu / %{limit}x"            after: "%llu / %x"
 //   before: "100%% and %{public}d"                 after: "100%% and %d"
@@ -43,7 +43,7 @@ std::string ConvertHilogToFmt(const char* hilogFmt)
     while ((begin = fmt.find("%{", pos)) != std::string::npos) {
         const size_t end = fmt.find('}', begin);
         if (end == std::string::npos) {
-            break; 
+            break;
         }
         result.append(fmt, pos, begin - pos);
         result.push_back('%');
@@ -56,7 +56,8 @@ std::string ConvertHilogToFmt(const char* hilogFmt)
 // Render a HILOG-style format string with printf arguments:
 //   before: "param env not equal to its owner. %{public}s at %{public}s:%{public}d"
 //   after : "param env not equal to its owner. Func at File.cpp:12"
-// Safety rules:
+// Safety rules: private formats are refused and failures fall back to the
+// converted (but unformatted) format string.
 // - Formats containing "%{private}" are refused: the raw format is returned
 //   unformatted so the result can never bypass hilog privacy masking.
 // - On truncation or formatting failure the converted (but unformatted)
