@@ -25,7 +25,7 @@
 
 #include "ecmascript/napi/include/dfx_jsnapi.h"
 #include "gtest/gtest.h"
-#include "multi_thread_error.h"
+#include "arkts_envsan_reporter.h"
 #include "native_api_internal.h"
 #include "test.h"
 
@@ -85,14 +85,14 @@ public:
         struct sigaction action = {};
         action.sa_sigaction = TestSignalHandler;
         action.sa_flags = SA_SIGINFO;
-        constexpr int multiThreadErrorSigno = 42;
-        sigaction(multiThreadErrorSigno, &action, &oldAction_);
+        constexpr int envSanSigno = 42;
+        sigaction(envSanSigno, &action, &oldAction_);
     }
 
     ~SignalHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
-        sigaction(multiThreadErrorSigno, &oldAction_, nullptr);
+        constexpr int envSanSigno = 42;
+        sigaction(envSanSigno, &oldAction_, nullptr);
     }
 
 private:
@@ -103,17 +103,17 @@ class DefaultHandlerGuard {
 public:
     DefaultHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
+        constexpr int envSanSigno = 42;
         struct sigaction action = {};
         action.sa_handler = SIG_DFL;
         sigemptyset(&action.sa_mask);
-        sigaction(multiThreadErrorSigno, &action, &oldAction_);
+        sigaction(envSanSigno, &action, &oldAction_);
     }
 
     ~DefaultHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
-        sigaction(multiThreadErrorSigno, &oldAction_, nullptr);
+        constexpr int envSanSigno = 42;
+        sigaction(envSanSigno, &oldAction_, nullptr);
     }
 
 private:
@@ -124,17 +124,17 @@ class PlainHandlerGuard {
 public:
     PlainHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
+        constexpr int envSanSigno = 42;
         struct sigaction action = {};
         action.sa_handler = PlainSignalHandler;
         sigemptyset(&action.sa_mask);
-        sigaction(multiThreadErrorSigno, &action, &oldAction_);
+        sigaction(envSanSigno, &action, &oldAction_);
     }
 
     ~PlainHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
-        sigaction(multiThreadErrorSigno, &oldAction_, nullptr);
+        constexpr int envSanSigno = 42;
+        sigaction(envSanSigno, &oldAction_, nullptr);
     }
 
 private:
@@ -145,17 +145,17 @@ class IgnoreHandlerGuard {
 public:
     IgnoreHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
+        constexpr int envSanSigno = 42;
         struct sigaction action = {};
         action.sa_handler = SIG_IGN;
         sigemptyset(&action.sa_mask);
-        sigaction(multiThreadErrorSigno, &action, &oldAction_);
+        sigaction(envSanSigno, &action, &oldAction_);
     }
 
     ~IgnoreHandlerGuard()
     {
-        constexpr int multiThreadErrorSigno = 42;
-        sigaction(multiThreadErrorSigno, &oldAction_, nullptr);
+        constexpr int envSanSigno = 42;
+        sigaction(envSanSigno, &oldAction_, nullptr);
     }
 
 private:
@@ -201,16 +201,16 @@ public:
 #endif // OHOS_PLATFORM
 } // namespace
 
-class MultiThreadErrorTest : public NativeEngineTest {
+class ArkTSEnvSanReporterTest : public NativeEngineTest {
 public:
     static void SetUpTestCase()
     {
-        GTEST_LOG_(INFO) << "MultiThreadErrorTest SetUpTestCase";
+        GTEST_LOG_(INFO) << "ArkTSEnvSanReporterTest SetUpTestCase";
     }
 
     static void TearDownTestCase()
     {
-        GTEST_LOG_(INFO) << "MultiThreadErrorTest TearDownTestCase";
+        GTEST_LOG_(INFO) << "ArkTSEnvSanReporterTest TearDownTestCase";
     }
 
     void SetUp() override {}
@@ -226,7 +226,7 @@ public:
  *           marker inputs
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, ConvertHilogToFmtTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ConvertHilogToFmtTest001, testing::ext::TestSize.Level1)
 {
     ASSERT_EQ(ConvertHilogToFmt("%{public}s at %{public}s:%{public}d"), "%s at %s:%d");
     ASSERT_EQ(ConvertHilogToFmt("%{private}llu / %{limit}x"), "%llu / %x");
@@ -247,7 +247,7 @@ HWTEST_F(MultiThreadErrorTest, ConvertHilogToFmtTest001, testing::ext::TestSize.
  *           fallback to the raw format string
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, FormatHilogMsgTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, FormatHilogMsgTest001, testing::ext::TestSize.Level1)
 {
     ASSERT_EQ(FormatHilogMsg("param env not equal to its owner. %{public}s at %{public}s:%{public}d",
                              "Func", "File.cpp", 12),
@@ -268,7 +268,7 @@ HWTEST_F(MultiThreadErrorTest, FormatHilogMsgTest001, testing::ext::TestSize.Lev
  *           hilog privacy masking when logged as a public string
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, FormatHilogMsgPrivateRejectTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, FormatHilogMsgPrivateRejectTest001, testing::ext::TestSize.Level1)
 {
     std::string result = FormatHilogMsg("secret count: %{private}" PRIu64, 42ULL);
     ASSERT_EQ(result, "secret count: %{private}" PRIu64);
@@ -282,24 +282,24 @@ HWTEST_F(MultiThreadErrorTest, FormatHilogMsgPrivateRejectTest001, testing::ext:
 
 #if defined(OHOS_PLATFORM)
 /**
- * @tc.name: NotifyMultiThreadErrorTest001
- * @tc.desc: Test NotifyMultiThreadError reports through signal 42 with the
+ * @tc.name: ReportArkTSEnvSanEventTest001
+ * @tc.desc: Test ReportArkTSEnvSanEvent reports through signal 42 with the
  *           message and millisecond timestamp carried in the debug_msg
  *           protocol, delivered to the calling thread with si_code -4, when
  *           no gate throttles the report
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "multi-thread violation detected");
+    ReportArkTSEnvSanEvent(engine_, "envsan violation detected");
 
     ASSERT_EQ(g_signalCount, 1);
-    ASSERT_STREQ(g_capturedMsg, "multi-thread violation detected");
+    ASSERT_STREQ(g_capturedMsg, "envsan violation detected");
     ASSERT_EQ(g_capturedSiCode, -4);
     ASSERT_EQ(g_handlerTid, static_cast<uint64_t>(NativeEngine::GetCurSysTid()));
     uint64_t before = static_cast<uint64_t>(time(nullptr)) * 1000 - 1000;
@@ -309,14 +309,14 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest001, testing::ext::Test
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorTest002
+ * @tc.name: ReportArkTSEnvSanEventTest002
  * @tc.desc: Test the frequency gate: with frequency=2 the report is allowed
  *           at every second detection, and the modulo counter keeps the
  *           pass / block / pass sequence deterministic whatever
  *           the counter state left by earlier tests
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest002, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventTest002, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
@@ -326,71 +326,71 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest002, testing::ext::Test
     int loops = 0;
     ResetCapture();
     while (g_signalCount == 0 && loops < loopLimit) {
-        NotifyMultiThreadError(engine_, "frequency gate");
+        ReportArkTSEnvSanEvent(engine_, "frequency gate");
         ++loops;
     }
     ASSERT_GT(g_signalCount, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "frequency gate");
+    ReportArkTSEnvSanEvent(engine_, "frequency gate");
     ASSERT_EQ(g_signalCount, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "frequency gate");
+    ReportArkTSEnvSanEvent(engine_, "frequency gate");
     ASSERT_EQ(g_signalCount, 1);
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorTest003
+ * @tc.name: ReportArkTSEnvSanEventTest003
  * @tc.desc: Test the interval gate: after a report an interval of 1440
  *           minutes blocks further reports while interval=0 lets them
  *           through again
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorTest003, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventTest003, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
 
     SetDetectionConfigForTest(1, 0);
     ResetCapture();
-    NotifyMultiThreadError(engine_, "interval gate");
+    ReportArkTSEnvSanEvent(engine_, "interval gate");
     ASSERT_EQ(g_signalCount, 1);
 
     SetDetectionConfigForTest(1, 1440);
     ResetCapture();
-    NotifyMultiThreadError(engine_, "interval gate");
+    ReportArkTSEnvSanEvent(engine_, "interval gate");
     ASSERT_EQ(g_signalCount, 0);
 
     SetDetectionConfigForTest(1, 0);
     ResetCapture();
-    NotifyMultiThreadError(engine_, "interval gate");
+    ReportArkTSEnvSanEvent(engine_, "interval gate");
     ASSERT_EQ(g_signalCount, 1);
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorDeferredDeliveryTest001
+ * @tc.name: ReportArkTSEnvSanEventDeferredDeliveryTest001
  * @tc.desc: Test the signal payload stays valid when signal 42 is blocked on
  *           the calling thread: the report stays pending and the handler
  *           reads the exact message after the thread unblocks the signal,
  *           instead of dereferencing a dangling stack pointer
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorDeferredDeliveryTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventDeferredDeliveryTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(1, 0);
 
-    constexpr int multiThreadErrorSigno = 42;
+    constexpr int envSanSigno = 42;
     sigset_t blockSet;
     sigset_t oldSet;
     sigemptyset(&blockSet);
-    sigaddset(&blockSet, multiThreadErrorSigno);
+    sigaddset(&blockSet, envSanSigno);
     ASSERT_EQ(pthread_sigmask(SIG_BLOCK, &blockSet, &oldSet), 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "deferred delivery");
+    ReportArkTSEnvSanEvent(engine_, "deferred delivery");
     int pendingCount = g_signalCount;
     ASSERT_EQ(pthread_sigmask(SIG_SETMASK, &oldSet, nullptr), 0);
 
@@ -402,13 +402,13 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorDeferredDeliveryTest001, te
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorNoHandlerTest001
- * @tc.desc: Test NotifyMultiThreadError skips signal 42 and falls back to
+ * @tc.name: ReportArkTSEnvSanEventNoHandlerTest001
+ * @tc.desc: Test ReportArkTSEnvSanEvent skips signal 42 and falls back to
  *           plain hilog when no handler is installed (SIG_DFL), so the
  *           real-time signal default action never terminates the process
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorNoHandlerTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventNoHandlerTest001, testing::ext::TestSize.Level1)
 {
     ASSERT_NE(engine_, nullptr);
     DetectionConfigGuard configGuard;
@@ -417,7 +417,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorNoHandlerTest001, testing::
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "report without handler");
+    ReportArkTSEnvSanEvent(engine_, "report without handler");
 
     ASSERT_EQ(g_signalCount, 0);
     ASSERT_TRUE(collector.Includes("no handler for signal 42"));
@@ -430,7 +430,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorNoHandlerTest001, testing::
  *           together with the appended hybrid stack
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, LogIfSpecialIntegrationTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, LogIfSpecialIntegrationTest001, testing::ext::TestSize.Level1)
 {
     ASSERT_NE(engine_, nullptr);
     DetectionConfigGuard configGuard;
@@ -450,11 +450,11 @@ HWTEST_F(MultiThreadErrorTest, LogIfSpecialIntegrationTest001, testing::ext::Tes
  * @tc.name: LogIfSpecialNullEngineTest001
  * @tc.desc: Test the LOG_IF_SPECIAL else-branch with a null engine: the report
  *           skips the hybrid stack and appends the backtrace-failure marker,
- *           and NotifyMultiThreadError's null path bypasses both gates so the
+ *           and ReportArkTSEnvSanEvent's null path bypasses both gates so the
  *           signal is still delivered
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, LogIfSpecialNullEngineTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, LogIfSpecialNullEngineTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
@@ -469,32 +469,32 @@ HWTEST_F(MultiThreadErrorTest, LogIfSpecialNullEngineTest001, testing::ext::Test
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorFrequencyDisabledTest001
+ * @tc.name: ReportArkTSEnvSanEventFrequencyDisabledTest001
  * @tc.desc: Test the frequency gate bypass: frequency < 1 disables the gate
  *           so consecutive detections are all reported
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorFrequencyDisabledTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventFrequencyDisabledTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(0, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "frequency disabled first");
-    NotifyMultiThreadError(engine_, "frequency disabled second");
+    ReportArkTSEnvSanEvent(engine_, "frequency disabled first");
+    ReportArkTSEnvSanEvent(engine_, "frequency disabled second");
 
     ASSERT_EQ(g_signalCount, 2);
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorIgnoredHandlerTest001
- * @tc.desc: Test NotifyMultiThreadError treats SIG_IGN like a missing
+ * @tc.name: ReportArkTSEnvSanEventIgnoredHandlerTest001
+ * @tc.desc: Test ReportArkTSEnvSanEvent treats SIG_IGN like a missing
  *           handler: no signal is sent, the report falls back to hilog and
  *           the process stays alive
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorIgnoredHandlerTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventIgnoredHandlerTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     IgnoreHandlerGuard ignoreGuard;
@@ -502,38 +502,38 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorIgnoredHandlerTest001, test
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "report with ignored handler");
+    ReportArkTSEnvSanEvent(engine_, "report with ignored handler");
 
     ASSERT_EQ(g_signalCount, 0);
     ASSERT_TRUE(collector.Includes("no handler for signal 42"));
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorPlainHandlerTest001
+ * @tc.name: ReportArkTSEnvSanEventPlainHandlerTest001
  * @tc.desc: Test a non-SA_SIGINFO handler still counts as available: the
  *           report is delivered through signal 42 to the plain handler
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorPlainHandlerTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventPlainHandlerTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     PlainHandlerGuard plainGuard;
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "report with plain handler");
+    ReportArkTSEnvSanEvent(engine_, "report with plain handler");
 
     ASSERT_EQ(g_plainSignalCount, 1);
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorFallbackThrottleTest001
+ * @tc.name: ReportArkTSEnvSanEventFallbackThrottleTest001
  * @tc.desc: Test a hilog-only fallback still claims the interval window:
  *           after the fallback report a 1440-minute interval blocks further
  *           reports and interval=0 releases the window again
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorFallbackThrottleTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventFallbackThrottleTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     DefaultHandlerGuard defaultGuard;
@@ -541,51 +541,51 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorFallbackThrottleTest001, te
     SetDetectionConfigForTest(1, 0);
 
     ResetCapture();
-    NotifyMultiThreadError(engine_, "fallback claims window");
+    ReportArkTSEnvSanEvent(engine_, "fallback claims window");
     ASSERT_EQ(g_signalCount, 0);
     ASSERT_TRUE(collector.Includes("no handler for signal 42"));
 
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(1, 1440);
     ResetCapture();
-    NotifyMultiThreadError(engine_, "within claimed window");
+    ReportArkTSEnvSanEvent(engine_, "within claimed window");
     ASSERT_EQ(g_signalCount, 0);
 
     SetDetectionConfigForTest(1, 0);
     ResetCapture();
-    NotifyMultiThreadError(engine_, "window released");
+    ReportArkTSEnvSanEvent(engine_, "window released");
     ASSERT_EQ(g_signalCount, 1);
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorNullEngineTest001
+ * @tc.name: ReportArkTSEnvSanEventNullEngineTest001
  * @tc.desc: Test a null engine bypasses both gates: with frequency and
  *           interval set to blocking values the report is still sent and
  *           carries the exact message
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorNullEngineTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventNullEngineTest001, testing::ext::TestSize.Level1)
 {
     DetectionConfigGuard configGuard;
     SignalHandlerGuard handlerGuard;
     SetDetectionConfigForTest(1000000, 1440);
 
     ResetCapture();
-    NotifyMultiThreadError(nullptr, "null engine report");
+    ReportArkTSEnvSanEvent(nullptr, "null engine report");
 
     ASSERT_EQ(g_signalCount, 1);
     ASSERT_STREQ(g_capturedMsg, "null engine report");
 }
 
 /**
- * @tc.name: NotifyMultiThreadErrorConcurrentTest001
+ * @tc.name: ReportArkTSEnvSanEventConcurrentTest001
  * @tc.desc: Test the frequency gate under concurrency: after calibration
  *           with frequency equal to the thread count, simultaneous reports
  *           from all threads yield exactly one signal because the counter
  *           assigns each caller a unique slot
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ReportArkTSEnvSanEventConcurrentTest001, testing::ext::TestSize.Level1)
 {
     constexpr size_t threadNum = 4;
     DetectionConfigGuard configGuard;
@@ -596,7 +596,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing:
     constexpr int loopLimit = 100;
     int loops = 0;
     while (g_signalCount == 0 && loops < loopLimit) {
-        NotifyMultiThreadError(engine_, "concurrent calibration");
+        ReportArkTSEnvSanEvent(engine_, "concurrent calibration");
         ++loops;
     }
     ASSERT_GT(g_signalCount, 0);
@@ -611,7 +611,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing:
             while (!go.load(std::memory_order_acquire)) {
                 std::this_thread::yield();
             }
-            NotifyMultiThreadError(engine_, "concurrent report");
+            ReportArkTSEnvSanEvent(engine_, "concurrent report");
         });
     }
     while (readyCount.load(std::memory_order_relaxed) < threadNum) {
@@ -632,7 +632,7 @@ HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorConcurrentTest001, testing:
  *           the cross-thread check as disabled (soft-report branch)
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, ValidEngineCheckReportTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, ValidEngineCheckReportTest001, testing::ext::TestSize.Level1)
 {
     panda::RuntimeOption option;
     option.SetArkProperties(0x105c);
@@ -672,47 +672,12 @@ HWTEST_F(MultiThreadErrorTest, ValidEngineCheckReportTest001, testing::ext::Test
  *           signal 42
  * @tc.type: FUNC
  */
-HWTEST_F(MultiThreadErrorTest, LogIfSpecialFatalBranchTest001, testing::ext::TestSize.Level1)
+HWTEST_F(ArkTSEnvSanReporterTest, LogIfSpecialFatalBranchTest001, testing::ext::TestSize.Level1)
 {
     BasicDeathTest deathTest([this]() {
         LOG_IF_SPECIAL(engine_, true, "LOG_IF_SPECIAL fatal branch test");
     });
     deathTest.AssertSignal(SIGABRT);
     ASSERT_TRUE(deathTest.GetResult());
-}
-
-/**
- * @tc.name: NotifyMultiThreadErrorThrottleLogTest001
- * @tc.desc: Test the gates log the suppression reason at error level: a
- *           detection blocked by the frequency gate or the interval gate
- *           emits a hilog error line while no signal is sent
- * @tc.type: FUNC
- */
-HWTEST_F(MultiThreadErrorTest, NotifyMultiThreadErrorThrottleLogTest001, testing::ext::TestSize.Level1)
-{
-    DetectionConfigGuard configGuard;
-    SignalHandlerGuard handlerGuard;
-    LoggerCollector collector(LogLevel::LOG_ERROR);
-    SetDetectionConfigForTest(2, 0);
-
-    ResetCapture();
-    constexpr int loopLimit = 100;
-    int loops = 0;
-    while (g_signalCount == 0 && loops < loopLimit) {
-        NotifyMultiThreadError(engine_, "throttle log");
-        ++loops;
-    }
-    ASSERT_GT(g_signalCount, 0);
-
-    ResetCapture();
-    NotifyMultiThreadError(engine_, "throttle log");
-    ASSERT_EQ(g_signalCount, 0);
-    ASSERT_TRUE(collector.Includes("blocked by frequency gate"));
-
-    SetDetectionConfigForTest(1, 1440);
-    ResetCapture();
-    NotifyMultiThreadError(engine_, "throttle log");
-    ASSERT_EQ(g_signalCount, 0);
-    ASSERT_TRUE(collector.Includes("blocked by interval gate"));
 }
 #endif // OHOS_PLATFORM

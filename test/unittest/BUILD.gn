@@ -126,20 +126,20 @@ test_ark_unittest("hook_list") {
   sources = [ "test_ark_hook_list.cpp" ]
 }
 
-test_ark_unittest("multi_thread_error") {
-  sources = [ "test_multi_thread_error.cpp" ]
+test_ark_unittest("arkts_envsan_reporter") {
+  sources = [ "test_arkts_envsan_reporter.cpp" ]
 }
 
 group("unittest") {
   testonly = true
   deps = [
+    ":test_ark_unittest_arkts_envsan_reporter",
     ":test_ark_unittest_base",
     ":test_ark_unittest_critical",
     ":test_ark_unittest_errorcode",
     ":test_ark_unittest_hybrid",
     ":test_ark_unittest_hook_list",
     ":test_ark_unittest_idle_monitor",
-    ":test_ark_unittest_multi_thread_error",
     ":test_ark_unittest_threadsafe",
     ":test_unittest_sendevent",
     ":test_worker_manager",

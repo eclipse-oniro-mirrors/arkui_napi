@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#include "multi_thread_error.h"
+#include "arkts_envsan_reporter.h"
 
 #include <cstdarg>
 #include <cstring>
@@ -21,32 +21,46 @@
 #include "securec.h"
 #include "utils/log.h"
 
+// Strip HILOG privacy tags from a HILOG-style format string, producing a plain
+// printf format: every complete "%{xxx}" tag ("%{public}", "%{private}",
+// "%{limit}", ...) collapses into a bare '%', all other text is kept as-is.
+// Conversion examples:
+//   before: "%{public}s at %{public}s:%{public}d"   after: "%s at %s:%d"
+//   before: "%{private}llu / %{limit}x"            after: "%llu / %x"
+//   before: "100%% and %{public}d"                 after: "100%% and %d"
+// An unterminated "%{" (no closing '}') is kept verbatim, and so is everything
+// after it. A null input yields "".
 std::string ConvertHilogToFmt(const char* hilogFmt)
 {
     if (hilogFmt == nullptr) {
         return "";
     }
+    const std::string fmt(hilogFmt);
     std::string result;
-    std::string fmt(hilogFmt);
+    result.reserve(fmt.size());
     size_t pos = 0;
-    while (pos < fmt.size()) {
-        size_t begin = fmt.find("%{", pos);
-        if (begin == std::string::npos) {
-            result.append(fmt, pos, fmt.size() - pos);
-            break;
-        }
-        size_t end = fmt.find('}', begin);
+    size_t begin = 0;
+    while ((begin = fmt.find("%{", pos)) != std::string::npos) {
+        const size_t end = fmt.find('}', begin);
         if (end == std::string::npos) {
-            result.append(fmt, pos, fmt.size() - pos);
-            break;
+            break; 
         }
         result.append(fmt, pos, begin - pos);
         result.push_back('%');
         pos = end + 1;
     }
+    result.append(fmt, pos, std::string::npos); // the tail, or the whole string when no tag exists
     return result;
 }
 
+// Render a HILOG-style format string with printf arguments:
+//   before: "param env not equal to its owner. %{public}s at %{public}s:%{public}d"
+//   after : "param env not equal to its owner. Func at File.cpp:12"
+// Safety rules:
+// - Formats containing "%{private}" are refused: the raw format is returned
+//   unformatted so the result can never bypass hilog privacy masking.
+// - On truncation or formatting failure the converted (but unformatted)
+//   format string is returned; a null format yields "".
 std::string FormatHilogMsg(const char* hilogFmt, ...)
 {
     if (hilogFmt == nullptr) {
@@ -57,7 +71,7 @@ std::string FormatHilogMsg(const char* hilogFmt, ...)
                    "to avoid bypassing hilog privacy masking, fmt: %{public}s", hilogFmt);
         return hilogFmt;
     }
-    std::string fmt = ConvertHilogToFmt(hilogFmt);
+    const std::string fmt = ConvertHilogToFmt(hilogFmt);
     constexpr size_t maxMsgSize = 4096;
     std::string msg(maxMsgSize, '\0');
     va_list args;
@@ -158,16 +172,16 @@ bool IsSignalHandlerAvailable(int signo)
 }
 } // namespace
 
-void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
+void ReportArkTSEnvSanEvent(NativeEngine* engine, const std::string &msg)
 {
     uint64_t now = NowMs();
     if (engine != nullptr) {
         if (!CheckCountNum(engine->GetDetectionFrequency())) {
-            HILOG_ERROR("multi-thread fault not reported to faultlogger: blocked by frequency gate");
+            HILOG_DEBUG("ArkTS_ENVSAN event not reported to faultlogger: blocked by frequency gate");
             return;
         }
         if (!CheckTimeInterval(now, engine->GetDetectionInterval())) {
-            HILOG_ERROR("multi-thread fault not reported to faultlogger: blocked by interval gate");
+            HILOG_DEBUG("ArkTS_ENVSAN event not reported to faultlogger: blocked by interval gate");
             return;
         }
     } else {
@@ -185,7 +199,7 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
         msgLen = MAX_DEBUG_MSG_LEN - 1;
     }
     if (memcpy_s(g_debugMsgBuf, MAX_DEBUG_MSG_LEN, msg.data(), msgLen) != EOK) {
-        HILOG_ERROR("copy multi-thread fault message failed");
+        HILOG_WARN("copy ArkTS_ENVSAN event message failed");
         return;
     }
     g_debugMsgBuf[msgLen] = '\0';
@@ -206,7 +220,7 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
 #else
     if (syscall(SYS_rt_tgsigqueueinfo, getpid(), syscall(SYS_gettid), signo, &info) == -1) {
 #endif
-        HILOG_ERROR("%{public}s", msg.c_str());
+        HILOG_WARN("%{public}s", msg.c_str());
     }
 }
 
@@ -214,9 +228,9 @@ void NotifyMultiThreadError(NativeEngine* engine, const std::string &msg)
 
 #include "utils/log.h"
 
-void NotifyMultiThreadError(NativeEngine* /*engine*/, const std::string &msg)
+void ReportArkTSEnvSanEvent(NativeEngine* /*engine*/, const std::string &msg)
 {
-    HILOG_ERROR("NotifyMultiThreadError is not supported on this platform, msg: %{public}s", msg.c_str());
+    HILOG_ERROR("ReportArkTSEnvSanEvent is not supported on this platform, msg: %{public}s", msg.c_str());
 }
 
 #endif // OHOS_PLATFORM

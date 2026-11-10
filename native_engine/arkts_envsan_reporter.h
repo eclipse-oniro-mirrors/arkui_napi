@@ -13,16 +13,21 @@
  * limitations under the License.
  */
 
-#ifndef FOUNDATION_ACE_NAPI_NATIVE_ENGINE_MULTI_THREAD_ERROR_H
-#define FOUNDATION_ACE_NAPI_NATIVE_ENGINE_MULTI_THREAD_ERROR_H
+#ifndef FOUNDATION_ACE_NAPI_NATIVE_ENGINE_ARKTS_ENVSAN_REPORTER_H
+#define FOUNDATION_ACE_NAPI_NATIVE_ENGINE_ARKTS_ENVSAN_REPORTER_H
 
 #include <string>
 
 class NativeEngine;
 
+// Strip HILOG privacy tags ("%{public}s" -> "%s") to get a plain printf format.
 std::string ConvertHilogToFmt(const char* hilogFmt);
+// printf-style formatting of a HILOG format string; refuses "%{private}" formats.
 std::string FormatHilogMsg(const char* hilogFmt, ...);
 
-void NotifyMultiThreadError(NativeEngine* engine, const std::string& msg);
+// Reports the ArkTS_ENVSAN fault event to faultloggerd via signal 42,
+// throttled by the engine's detection frequency / interval; falls back to
+// hilog when signal delivery is unavailable.
+void ReportArkTSEnvSanEvent(NativeEngine* engine, const std::string& msg);
 
-#endif /* FOUNDATION_ACE_NAPI_NATIVE_ENGINE_MULTI_THREAD_ERROR_H */
+#endif /* FOUNDATION_ACE_NAPI_NATIVE_ENGINE_ARKTS_ENVSAN_REPORTER_H */

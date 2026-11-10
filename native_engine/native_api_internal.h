@@ -21,7 +21,7 @@
 
 #include "napi/native_api.h"
 #include "native_engine.h"
-#include "multi_thread_error.h"
+#include "arkts_envsan_reporter.h"
 #include "utils/log.h"
 
 static inline napi_status napi_clear_last_error(napi_env env)
@@ -100,19 +100,20 @@ static inline napi_status napi_set_last_error(napi_env env,
                 HILOG_ERROR("current napi interface cannot run in multi-thread, "                         \
                             "thread id: %{public}d, current thread id: %{public}d"                        \
                             "\n%{public}s",                                                               \
-                            engine->GetSysTid(), tid, backtrace ? stack.c_str() : "Failed to backtrace."); \
+                            engine->GetSysTid(), tid, backtrace ? stack.c_str() : "Faild to backtrace."); \
             };                                                                                            \
         };                                                                                                \
     } while (0)
 
-static inline void ReportMultiThreadFault(NativeEngine* engine, const std::string& msg)
+template<typename... Args>
+static inline void ReportArkTSEnvSanFault(NativeEngine* engine, const char* fmt, Args... args)
 {
     NativeEngine* liveEngine = (engine != nullptr && NativeEngine::IsAlive(engine)) ? engine : nullptr;
     std::string stack;
     bool backtrace = liveEngine != nullptr && DumpHybridStack(liveEngine->GetEcmaVm(), stack, 0, 8);
-    std::string fullMsg = msg + "\n" + (backtrace ? stack : "Failed to backtrace.");
+    std::string fullMsg = FormatHilogMsg(fmt, args...) + "\n" + (backtrace ? stack : "Failed to backtrace.");
     HILOG_ERROR("%{public}s", fullMsg.c_str());
-    NotifyMultiThreadError(liveEngine, fullMsg);
+    ReportArkTSEnvSanEvent(liveEngine, fullMsg);
 }
 
 #define LOG_IF_SPECIAL(engine, condition, fmt, ...)                             \
@@ -120,7 +121,7 @@ static inline void ReportMultiThreadFault(NativeEngine* engine, const std::strin
         if ((condition)) {                                                      \
             HILOG_FATAL(fmt, ##__VA_ARGS__);                                    \
         } else {                                                                \
-            ReportMultiThreadFault((engine), FormatHilogMsg(fmt, ##__VA_ARGS__)); \
+            ReportArkTSEnvSanFault((engine), (fmt), ##__VA_ARGS__);             \
         }                                                                      \
     } while (0)
 
