@@ -50,6 +50,7 @@ void FFIDataManager::StoreRemoteData(const sptr<RemoteData>& data)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx);
     remoteDataStore_[data->GetID()] = data;
+    data->SetReleaseNotifyEnabled(true);
 }
 
 int64_t FFIDataManager::NewFFIDataId()
@@ -97,6 +98,10 @@ RemoteData::RemoteData(int64_t id) : id_(id), isValid_(id != 0)
 RemoteData::~RemoteData()
 {
     HiLog::Debug(LABEL, "RemoteData destructed: %{public}" PRId64 ".", id_);
+    if (!IsReleaseNotifyEnabled()) {
+        isValid_ = false;
+        return;
+    }
     auto cjFunc = CJFFIFnInvoker::GetInstance()->GetCJFuncs().atCOHOSFFIReleaseFFIData;
     if (!cjFunc) {
         HiLog::Error(LABEL, "Failed to invoke CJ function: FFIReleaseFFIData!");
@@ -108,6 +113,9 @@ RemoteData::~RemoteData()
 
 CJLambdaRemoteData::~CJLambdaRemoteData()
 {
+    if (!IsReleaseNotifyEnabled()) {
+        return;
+    }
     auto manager = FFIDataManager::GetInstance();
     manager->RemoveRemoteData(GetID());
 }

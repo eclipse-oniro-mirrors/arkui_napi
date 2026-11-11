@@ -13,6 +13,11 @@
  * limitations under the License.
  */
 
+#include <atomic>
+#include <cstdint>
+#include <thread>
+#include <vector>
+
 #include "gtest/gtest.h"
 #include "ffi_remote_data.h"
 
@@ -133,5 +138,115 @@ void FfiDataTest::TestIsType()
 TEST_F(FfiDataTest, Types)
 {
     RunLocalTest();
+}
+
+std::atomic<int32_t> g_releaseNotifyCount{0};
+
+bool FakeReleaseFFIData(int64_t /* id */)
+{
+    g_releaseNotifyCount.fetch_add(1);
+    return true;
+}
+
+/**
+ * @tc.name: ExistFollowsStoreAndRelease
+ * @tc.desc: Verify that FFIData::Exist reflects store and release
+ * @tc.type: FUNC
+ */
+HWTEST_F(FfiDataTest, ExistFollowsStoreAndRelease, testing::ext::TestSize.Level1)
+{
+    auto data = FFIData::Create<SampleBase>();
+    ASSERT_NE(data, nullptr);
+    const auto id = data->GetID();
+    EXPECT_TRUE(FFIData::Exist(id));
+    FFIData::Release(id);
+    EXPECT_FALSE(FFIData::Exist(id));
+    EXPECT_FALSE(FFIData::Exist(0));
+}
+
+/**
+ * @tc.name: CreateSameIdReusesRegisteredInstance
+ * @tc.desc: Verify that RemoteData::Create returns the registered instance for the same id
+ * @tc.type: FUNC
+ */
+HWTEST_F(FfiDataTest, CreateSameIdReusesRegisteredInstance, testing::ext::TestSize.Level1)
+{
+    const int sampleId = 90001;
+    auto first = RemoteData::Create<RemoteDataSample>(sampleId);
+    ASSERT_NE(first, nullptr);
+    auto second = RemoteData::Create<RemoteDataSample>(sampleId);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(first.GetRefPtr(), second.GetRefPtr());
+}
+
+/**
+ * @tc.name: UnregisteredInstanceDoesNotNotifyRelease
+ * @tc.desc: Verify that only the registered instance notifies CJ about release
+ * @tc.type: FUNC
+ */
+HWTEST_F(FfiDataTest, UnregisteredInstanceDoesNotNotifyRelease, testing::ext::TestSize.Level1)
+{
+    FFIAtCPackage funcs;
+    funcs.atCOHOSFFIReleaseFFIData = FakeReleaseFFIData;
+    CJFFIFnInvoker::GetInstance()->RegisterCJFuncs(funcs);
+
+    g_releaseNotifyCount.store(0);
+    {
+        OHOS::sptr<RemoteDataSample> unregistered = new RemoteDataSample(90002);
+        EXPECT_NE(unregistered, nullptr);
+    }
+    EXPECT_EQ(g_releaseNotifyCount.load(), 0);
+
+    g_releaseNotifyCount.store(0);
+    {
+        auto registered = RemoteData::Create<RemoteDataSample>(90003);
+        ASSERT_NE(registered, nullptr);
+    }
+    EXPECT_EQ(g_releaseNotifyCount.load(), 1);
+
+    CJFFIFnInvoker::GetInstance()->RegisterCJFuncs(FFIAtCPackage());
+}
+
+/**
+ * @tc.name: LoserDestructorKeepsWinnerRegistration
+ * @tc.desc: Verify that destroying an unregistered instance keeps the winner registration
+ * @tc.type: FUNC
+ */
+HWTEST_F(FfiDataTest, LoserDestructorKeepsWinnerRegistration, testing::ext::TestSize.Level1)
+{
+    const int64_t registeredId = 90004;
+    auto winner = RemoteData::Create<CJLambdaRemoteData>(registeredId);
+    ASSERT_NE(winner, nullptr);
+    {
+        OHOS::sptr<CJLambdaRemoteData> loser = new CJLambdaRemoteData(registeredId);
+        EXPECT_NE(loser, nullptr);
+    }
+    EXPECT_NE(FFIDataManager::GetInstance()->GetRemoteData(registeredId), nullptr);
+}
+
+/**
+ * @tc.name: ConcurrentCreateSameIdYieldsSingleInstance
+ * @tc.desc: Verify that concurrent creation with the same id yields a single instance
+ * @tc.type: FUNC
+ */
+HWTEST_F(FfiDataTest, ConcurrentCreateSameIdYieldsSingleInstance, testing::ext::TestSize.Level1)
+{
+    constexpr int32_t threadCount = 8;
+    const int sampleId = 90005;
+    std::vector<OHOS::sptr<RemoteDataSample>> results(threadCount);
+    std::vector<std::thread> threads;
+    threads.reserve(threadCount);
+    for (int32_t i = 0; i < threadCount; ++i) {
+        threads.emplace_back([&results, i, sampleId]() {
+            results[i] = RemoteData::Create<RemoteDataSample>(sampleId);
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    for (int32_t i = 0; i < threadCount; ++i) {
+        ASSERT_NE(results[i], nullptr);
+        EXPECT_EQ(results[i].GetRefPtr(), results[0].GetRefPtr());
+    }
 }
 }

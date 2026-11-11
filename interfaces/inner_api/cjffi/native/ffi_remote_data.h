@@ -20,6 +20,7 @@
 #include "refbase.h"
 #include "unordered_map"
 
+#include <atomic>
 #include <mutex>
 
 #include "cj_fn_invoker.h"
@@ -60,6 +61,7 @@ public:
     }
     void StoreFFIData(const sptr<FFIData>& data);
     void StoreRemoteData(const sptr<RemoteData>& data);
+    sptr<RemoteData> TryStoreRemoteData(int64_t id, const sptr<RemoteData>& data);
     void RemoveFFIData(int64_t id)
     {
         [[maybe_unused]] sptr<FFIData> keepAlive = nullptr;
@@ -91,11 +93,6 @@ private:
 
     std::unordered_map<int64_t, sptr<FFIData>> ffiDataStore_;
     std::unordered_map<int64_t, wptr<RemoteData>> remoteDataStore_;
-
-    bool FFIDataExist(int64_t id) const
-    {
-        return ffiDataStore_.find(id) != ffiDataStore_.end();
-    }
 
     int FFIDataIdSafeIncrease();
 };
@@ -142,9 +139,11 @@ public:
             return nullptr;
         }
         sptr<T> ref(rawRef);
-        manager->StoreRemoteData(ref);
-
-        return ref;
+        auto winner = manager->TryStoreRemoteData(id, ref);
+        if (winner == nullptr) {
+            return nullptr;
+        }
+        return sptr<T>(winner.GetRefPtr()->template DynamicCast<T>());
     }
 
     ~RemoteData() override;
@@ -158,10 +157,33 @@ private:
 public:
     int64_t GetID() const;
 
+    void SetReleaseNotifyEnabled(bool enabled)
+    {
+        releaseNotifyEnabled_ = enabled;
+    }
+
+    bool IsReleaseNotifyEnabled() const
+    {
+        return releaseNotifyEnabled_;
+    }
+
 private:
     int64_t id_;
     bool isValid_;
+    std::atomic<bool> releaseNotifyEnabled_{false};
 };
+
+inline sptr<RemoteData> FFIDataManager::TryStoreRemoteData(int64_t id, const sptr<RemoteData>& data)
+{
+    std::lock_guard<std::recursive_mutex> lock(mtx);
+    sptr<RemoteData> existed = remoteDataStore_[id].promote();
+    if (existed != nullptr) {
+        return existed;
+    }
+    remoteDataStore_[id] = data;
+    data->SetReleaseNotifyEnabled(true);
+    return data;
+}
 
 class FFI_EXPORT CJLambdaRemoteData : public RemoteData {
     DECL_TYPE(CJLambdaRemoteData, RemoteData)
@@ -221,8 +243,7 @@ public:
     }
     static bool Exist(int64_t id)
     {
-        auto& store_ = FFIDataManager::GetInstance()->ffiDataStore_;
-        return store_.find(id) != store_.end();
+        return FFIDataManager::GetInstance()->GetFFIData(id) != nullptr;
     }
 
     int64_t GetID() const
