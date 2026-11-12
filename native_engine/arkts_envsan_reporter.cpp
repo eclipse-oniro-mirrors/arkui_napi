@@ -22,14 +22,14 @@
 #include "utils/log.h"
 
 // Strip HILOG privacy tags from a HILOG-style format string, producing a plain
-// printf format: every complete "%{xxx}" tag ("%{public}", "%{private}",
-// "%{limit}", ...) collapses into a bare '%', all other text is kept as-is.
-// Example conversions, shown as before and after pairs.
-//   before: "%{public}s at %{public}s:%{public}d"   after: "%s at %s:%d"
-//   before: "%{private}llu / %{limit}x"            after: "%llu / %x"
-//   before: "100%% and %{public}d"                 after: "100%% and %d"
-// An unterminated "%{" (no closing '}') is kept verbatim, and so is everything
-// after it. A null input yields "".
+// printf format. Example conversions, shown as before and after pairs.
+//   before: "param env not equal to its owner. %{public}s at %{public}s:%{public}d"
+//   after : "param env not equal to its owner. %s at %s:%d"
+//   before: "owner env has been destroyed, "
+//           "owner id: %{public}" PRIu64 ", current env id: %{public}" PRIu64 ". "
+//           "%{public}s at %{public}s:%{public}d, "
+//   after : "owner env has been destroyed, owner id: %" PRIu64 ", current env id: %" PRIu64 ". %s at %s:%d, "
+
 std::string ConvertHilogToFmt(const char* hilogFmt)
 {
     if (hilogFmt == nullptr) {
@@ -49,19 +49,18 @@ std::string ConvertHilogToFmt(const char* hilogFmt)
         result.push_back('%');
         pos = end + 1;
     }
-    result.append(fmt, pos, std::string::npos); // the tail, or the whole string when no tag exists
+    result.append(fmt, pos, std::string::npos);
     return result;
 }
 
 // Render a HILOG-style format string with printf arguments:
 //   before: "param env not equal to its owner. %{public}s at %{public}s:%{public}d"
 //   after : "param env not equal to its owner. Func at File.cpp:12"
-// Safety rules: private formats are refused and failures fall back to the
-// converted (but unformatted) format string.
-// - Formats containing "%{private}" are refused: the raw format is returned
-//   unformatted so the result can never bypass hilog privacy masking.
-// - On truncation or formatting failure the converted (but unformatted)
-//   format string is returned; a null format yields "".
+//   before: "owner env has been destroyed, "
+//           "owner id: %{public}" PRIu64 ", current env id: %{public}" PRIu64 ". "
+//           "%{public}s at %{public}s:%{public}d, " with args (7, 9, "Func", "File.cpp", 12)
+//   after : "owner env has been destroyed, owner id: 7, current env id: 9. Func at File.cpp:12, "
+
 std::string FormatHilogMsg(const char* hilogFmt, ...)
 {
     if (hilogFmt == nullptr) {
@@ -191,7 +190,7 @@ void ReportArkTSEnvSanEvent(NativeEngine* engine, const std::string &msg)
 
     static constexpr int signo = 42;
     if (!IsSignalHandlerAvailable(signo)) {
-        HILOG_ERROR("no handler for signal %{public}d, report by hilog: %{public}s", signo, msg.c_str());
+        HILOG_WARN("no handler for signal %{public}d, report by hilog: %{public}s", signo, msg.c_str());
         return;
     }
 
