@@ -190,7 +190,7 @@ void ReportArkTSEnvSanEvent(NativeEngine* engine, const std::string &msg)
 
     static constexpr int signo = 42;
     if (!IsSignalHandlerAvailable(signo)) {
-        HILOG_WARN("no handler for signal %{public}d, report by hilog: %{public}s", signo, msg.c_str());
+        HILOG_ERROR("no handler for signal %{public}d, report by hilog: %{public}s", signo, msg.c_str());
         return;
     }
 
