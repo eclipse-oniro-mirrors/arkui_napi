@@ -17,9 +17,11 @@
 #define FOUNDATION_ACE_NAPI_NATIVE_ENGINE_NATIVE_API_INTERNAL_H
 
 #include <cinttypes>
+#include <string>
 
 #include "napi/native_api.h"
 #include "native_engine.h"
+#include "arkts_envsan_reporter.h"
 #include "utils/log.h"
 
 static inline napi_status napi_clear_last_error(napi_env env)
@@ -103,15 +105,24 @@ static inline napi_status napi_set_last_error(napi_env env,
         };                                                                                                \
     } while (0)
 
-#define LOG_IF_SPECIAL(engine, condition, fmt, ...)                                                            \
-    do {                                                                                                       \
-        if ((condition)) {                                                                                     \
-            HILOG_FATAL(fmt, ##__VA_ARGS__);                                                                   \
-        } else {                                                                                               \
-            std::string stack;                                                                                 \
-            bool backtrace = DumpHybridStack((engine)->GetEcmaVm(), stack, 0, 8);                             \
-            HILOG_ERROR(fmt "\n%{public}s", ##__VA_ARGS__, backtrace ? stack.c_str() : "Faild to backtrace."); \
-        }                                                                                                      \
+template<typename... Args>
+static inline void ReportArkTSEnvSanFault(NativeEngine* engine, const char* fmt, Args... args)
+{
+    NativeEngine* liveEngine = (engine != nullptr && NativeEngine::IsAlive(engine)) ? engine : nullptr;
+    std::string stack;
+    bool backtrace = liveEngine != nullptr && DumpHybridStack(liveEngine->GetEcmaVm(), stack, 0, 8);
+    std::string fullMsg = FormatHilogMsg(fmt, args...) + "\n" + (backtrace ? stack : "Failed to backtrace.");
+    HILOG_ERROR("%{public}s", fullMsg.c_str());
+    ReportArkTSEnvSanEvent(liveEngine, fullMsg);
+}
+
+#define LOG_IF_SPECIAL(engine, condition, fmt, ...)                             \
+    do {                                                                        \
+        if ((condition)) {                                                      \
+            HILOG_FATAL(fmt, ##__VA_ARGS__);                                    \
+        } else {                                                                \
+            ReportArkTSEnvSanFault((engine), (fmt), ##__VA_ARGS__);             \
+        }                                                                      \
     } while (0)
 
 #ifndef LIKELY

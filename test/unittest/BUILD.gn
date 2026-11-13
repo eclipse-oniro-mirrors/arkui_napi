@@ -127,9 +127,14 @@ test_ark_unittest("hook_list") {
   sources = [ "test_ark_hook_list.cpp" ]
 }
 
+test_ark_unittest("arkts_envsan_reporter") {
+  sources = [ "test_arkts_envsan_reporter.cpp" ]
+}
+
 group("unittest") {
   testonly = true
   deps = [
+    ":test_ark_unittest_arkts_envsan_reporter",
     ":test_ark_unittest_base",
     ":test_ark_unittest_critical",
     ":test_ark_unittest_errorcode",
