@@ -125,4 +125,9 @@ NAPI_EXTERN napi_status napi_wrap_with_xref(napi_env env,
 #endif // PANDA_JS_ETS_HYBRID_MODE
 NAPI_EXTERN napi_status napi_register_appstate_callback(napi_env env, NapiAppStateCallback callback);
 
+// Reports the ArkTS-Sta (static runtime) background GC start/finish to the process freeze
+// coordinator (ArkIdleMonitor), which defers the process freeze until the background GCs of
+// both runtimes have finished and then notifies the freeze module (RSS) exactly once.
+NAPI_EXTERN napi_status napi_notify_arkts_sta_background_gc(bool gcStarted);
+
 #endif /* FOUNDATION_ACE_NAPI_INTERFACES_KITS_NAPI_NATIVE_NODE_HYBRID_API_H */

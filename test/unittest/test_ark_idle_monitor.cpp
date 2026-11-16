@@ -340,6 +340,187 @@ HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorDeferfreezeTest006, testing::ext::Te
 }
 
 /**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest001
+ * @tc.desc: Test ArkTS-Sta background GC opens and releases the freeze deferral
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest001, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+    arkIdleMonitor->NotifyChangeBackgroundState(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(false);
+    arkIdleMonitor->SetDeferfreeze(false);
+    arkIdleMonitor->SetDynamicBackgroundGcActive(false);
+
+    // The static runtime background GC starts right on the background switch
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_TRUE(arkIdleMonitor->IsSwitchToBackgroundTask());
+
+    // Once it finishes the freeze deferral is released
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_FALSE(arkIdleMonitor->IsSwitchToBackgroundTask());
+}
+
+/**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest002
+ * @tc.desc: Test the freeze deferral is held until both runtimes finish their background GCs
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest002, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+    arkIdleMonitor->NotifyChangeBackgroundState(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(false);
+    arkIdleMonitor->SetDeferfreeze(false);
+    arkIdleMonitor->SetDynamicBackgroundGcActive(false);
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+
+    // The dynamic runtime finished its background GC, but the static runtime GC still runs
+    arkIdleMonitor->NotifyNeedFreeze(true);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_TRUE(arkIdleMonitor->IsSwitchToBackgroundTask());
+
+    // The static runtime background GC finished: single release of the deferral
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_FALSE(arkIdleMonitor->IsSwitchToBackgroundTask());
+}
+
+/**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest003
+ * @tc.desc: Test the freeze deferral is held while the dynamic background GC session runs
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest003, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+    arkIdleMonitor->NotifyChangeBackgroundState(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(true);
+    arkIdleMonitor->SetDeferfreeze(true);
+    arkIdleMonitor->SetDynamicBackgroundGcActive(true);
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    // The static runtime background GC finished before the dynamic session
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_TRUE(arkIdleMonitor->IsSwitchToBackgroundTask());
+
+    // The dynamic runtime finished its background GC: single release of the deferral
+    arkIdleMonitor->NotifyNeedFreeze(true);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_FALSE(arkIdleMonitor->IsSwitchToBackgroundTask());
+}
+
+/**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest004
+ * @tc.desc: Test overlapping ArkTS-Sta background GCs are all awaited before the release
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest004, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+    arkIdleMonitor->NotifyChangeBackgroundState(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(false);
+    arkIdleMonitor->SetDeferfreeze(false);
+    arkIdleMonitor->SetDynamicBackgroundGcActive(false);
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+
+    // One GC finished, another is still running
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_TRUE(arkIdleMonitor->IsDeferfreeze());
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_FALSE(arkIdleMonitor->IsSwitchToBackgroundTask());
+}
+
+/**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest005
+ * @tc.desc: Test an unpaired ArkTS-Sta background GC finish keeps the coordinator inert
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest005, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(false);
+    arkIdleMonitor->SetDeferfreeze(false);
+    arkIdleMonitor->SetDynamicBackgroundGcActive(false);
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    ASSERT_FALSE(arkIdleMonitor->IsSwitchToBackgroundTask());
+}
+
+/**
+ * @tc.name: NapiArkIdleMonitorStaBackgroundGcTest006
+ * @tc.desc: Test ArkTS-Sta background GC notifications are ignored when deferfreeze is disabled
+ * @tc.type: FUNC
+ * @tc.level: Level0
+ */
+HWTEST_F(NapiArkIdleMonitorTest, IdleMonitorStaBackgroundGcTest006, testing::ext::TestSize.Level0)
+{
+    ASSERT_NE(engine_, nullptr);
+    EcmaVM *vm = const_cast<EcmaVM*>(reinterpret_cast<ArkNativeEngine*>(engine_)->GetEcmaVm());
+
+    auto arkIdleMonitor = ArkIdleMonitor::GetInstance();
+    arkIdleMonitor->SetMainThreadEcmaVM(vm);
+    arkIdleMonitor->NotifyChangeBackgroundState(true);
+
+    arkIdleMonitor->SetSwitchToBackgroundTask(false);
+    arkIdleMonitor->SetDeferfreeze(false);
+    arkIdleMonitor->SetEnableDeferFreeze(false);
+
+    arkIdleMonitor->NotifyStaBackgroundGcState(true);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+    arkIdleMonitor->NotifyStaBackgroundGcState(false);
+    ASSERT_FALSE(arkIdleMonitor->IsDeferfreeze());
+
+    arkIdleMonitor->SetEnableDeferFreeze(true);
+}
+
+/**
  * @tc.name: NapiArkIdleMonitorNotifyLooperIdleStartTest001
  * @tc.desc: Test NotifyLooperIdleStart interface
  * @tc.type: FUNC
