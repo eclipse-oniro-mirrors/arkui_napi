@@ -52,6 +52,7 @@ config("ark_interop_config") {
 ohos_source_set("cj_envsetup") {
   part_name = "napi"
   subsystem_name = "arkui"
+  branch_protector_ret = "pac_ret"
 
   configs = [ ":ark_interop_config" ]
   sources = [ "cj_envsetup.cpp" ]
