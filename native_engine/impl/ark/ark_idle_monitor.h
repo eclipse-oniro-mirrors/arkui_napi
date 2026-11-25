@@ -291,6 +291,8 @@ private:
     bool CheckIfInBackgroundInCompressGC();
     bool SwitchBackgroundCheckGCTask(int64_t timestamp, int64_t idleDuration);
     void IntervalMonitor();
+    bool TryTriggerGlobalCCStress();
+    void PostGlobalCCStressTask();
     void NotifyMainThreadTryCompressGC();
     void ClearIdleStats();
     void TryTriggerGC(TriggerGCType gcType);
@@ -302,6 +304,13 @@ private:
     void PostSwitchBackgroundGCTask();
     void ReportDataToRSS(bool needFreeze);
     void TryTriggerCompressGCOfProcess(bool isSwitchToBackground);
+#if defined(ENABLE_EVENT_HANDLER)
+    bool TryTriggerBackgroundGlobalCC();
+#endif
+    bool TryTriggerBackgroundWorkerGC();
+    int64_t TriggerBackgroundWorkerGCAndWait(napi_env workerEnv, std::unique_lock<std::mutex>& vectorLock);
+    void PostBackgroundSharedGCTask(bool isSwitchToBackground);
+    static TRIGGER_IDLE_GC_TYPE GetBackgroundGCType(bool isSwitchToBackground);
     void TryTriggerWorkerLocalGC();
     enum class WorkerGCResult {
         READY,
@@ -370,6 +379,7 @@ private:
     int switchBackgroundTimerHandler_ {-1};
     uint32_t numberOfLowIdleNotifyCycles_ {0U};
     uint32_t numberOfHighIdleTimeRatio_ {0U};
+    uint32_t globalCCStressCycleCount_ {0};
     std::queue<int> timerHandlerQueue_;
     uint32_t handlerWaitToStopCount_ {0};
     RingBuffer<int64_t, IDLE_CHECK_INTERVAL_LENGTH> recordedIdleNotifyInterval_;
