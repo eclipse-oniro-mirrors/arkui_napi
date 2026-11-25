@@ -1,10 +1,10 @@
 # 引擎与实现知识
 
-本文记录 NativeEngine 抽象层 OH 差异和 Ark 引擎实现。与 Node.js N-API 一致的基础概念不再展开。异步/引用/API/错误差异见 `docs/knowledge/napi-differences.md`，模块加载见 `docs/knowledge/module-manager.md`，Cangjie 互操作见 `docs/knowledge/cjffi.md`，构建见 `docs/knowledge/build-platform.md`。
+本文记录 NativeEngine 抽象层 OH 差异和 Ark 引擎实现。与 Node.js N-API 一致的基础概念不再展开。异步/引用/API/错误差异见 `docs/knowledge/napi-differences.md`，构建见 `docs/knowledge/build-platform.md`。
 
 ## 核心模型
 
-ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造函数执行 20 步初始化（ark_native_engine.cpp:495-564）：基类 Init → `JSNApi::SetEnv` → 保存 context_ 为 Global → 创建 NapiOptions → 注入 requireNapi 全局函数 → `SetLoop` → 注册弱引用终结回调→PostFinalizeTasks → 注册定时器回调 → `NotifyEnvInitialized` → `ArkIdleMonitor::EnableIdleGC`。
+ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造函数的主要初始化步骤包括：基类 Init → `JSNApi::SetEnv` → 保存 context_ 为 Global → 创建 NapiOptions → 注入 requireNapi 全局函数 → `SetLoop` → 注册弱引用终结回调→PostFinalizeTasks → 注册定时器回调 → `NotifyEnvInitialized`。
 
 ## 与 Node.js N-API 的关键差异
 
@@ -18,17 +18,14 @@ ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造�
 | NativeScopeManager | — | 已废弃 `// To be delete`（scope_manager/native_scope_manager.h:19） | 不要使用 |
 | AsyncWork complete | 在 callback scope 内 | **不在 CallbackScope**，仅 LocalScope+TryCatch（native_async_work.cpp:249,268） | 无 CallbackScope 语义 |
 | CriticalScope | — | 封装 `JsiFastNativeScope`，未关闭则 HILOG_FATAL（native_async_work.cpp:282-286） | 独有概念 |
-| 容器作用域 | — | 编译期 `napi_enable_container_scope` + 运行时 `persist.ace.napiContainerScope.enabled`（ark_native_engine.cpp:513） | 双重条件 |
 | 异常跨作用域 | pending exception | `TryCatch` 析构存入 `lastException_`，`NAPI_PREAMBLE` 检测（native_engine.h:891-905） | 字段传播 |
 
 ## Ark 引擎关键组件
 
 | 组件 | 职责 | 关键约束 |
 |---|---|---|
-| ArkIdleMonitor | 空闲 GC 监控（单例） | 默认 1000ms 间隔；前台需连续 15 周期 idleNotify≤10 且 idleRatio≥0.985 |
 | ArkNativeTimer | uv_timer 定时器 | 回调在 uv_loop 线程；一次性回调后自动删除 |
 | ArkFinalizersPack | 批量 finalizer | 主线程默认异步，pending>500MB 切同步；env 析构期间跳过 |
-| ArkXRefNativeReference | Hybrid 引用（XRef 跨 VM） | refCount>0 强引用，=0 弱引用+finalize |
 | NapiOptions | 引擎配置 | 预留位掩码，`ParseProperties()` 为空实现 |
 
 ## 约束规则
@@ -46,7 +43,6 @@ ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造�
 
 - NativeScopeManager 已废弃（`// To be delete`），不要继续使用。
 - 代码中不存在 "NativeValue" C++ 类——napi_value 是 JSValueRef 的 reinterpret。
-- 容器作用域需编译期+运行时双重条件，仅改 GN 参数不生效。
 - AsyncWork complete 不在 CallbackScope 内——不要假设有 CallbackScope 语义。
 
 ## 修改前检查
@@ -56,8 +52,7 @@ ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造�
 - [ ] 成员、容器、缓存或异步结果中的值是否用强 `napi_ref` 持有，并在访问或类型判断前通过 `napi_get_reference_value` 重新取值？
 - [ ] 回调是否在 CallbackScope 内执行？
 - [ ] env 是否在正确的线程？
-- [ ] 引用类型选择是否正确（普通/Sendable/Hybrid）？
-- [ ] 容器作用域改动是否同时考虑编译期和运行时？
+- [ ] 引用类型选择是否正确（普通/Sendable）？
 
 ## 代码和测试
 
@@ -70,24 +65,21 @@ ArkNativeEngine 继承 NativeEngine，桥接 Ark VM 与 NAPI 抽象层。构造�
 | napi_value↔JSValueRef | `native_engine/native_utils.h` |
 | 引用创建、取值与删除 | `native_engine/native_api.cpp`（`napi_create_reference`、`napi_get_reference_value`、`napi_delete_reference`） |
 | NativeValue/Property/Deferred/Event | `native_engine/native_value.h`、`native_property.h`、`native_deferred.h`、`native_event.{h,cpp}` |
-| NativeContainerScope | `native_engine/native_container_scope.h` |
 | env 创建 | `native_engine/native_create_env.{h,cpp}` |
 | 回调作用域 | `callback_scope_manager/native_callback_scope_manager.{h,cpp}` |
 | ArkNativeEngine | `native_engine/impl/ark/ark_native_engine.{h,cpp}` |
-| ArkIdleMonitor | `native_engine/impl/ark/ark_idle_monitor.{h,cpp}` |
 | ArkNativeTimer | `native_engine/impl/ark/ark_native_timer.{h,cpp}` |
 | ArkFinalizersPack | `native_engine/impl/ark/ark_finalizers_pack.h` |
 | ArkNativeOptions | `native_engine/impl/ark/ark_native_options.h` |
-| Ark 引用实现 | `native_engine/impl/ark/ark_native_reference.{h,cpp}`、`ark_sendable_native_reference.{h,cpp}`、`ark_hybrid_native_reference.{h,cpp}` |
+| Ark 引用实现 | `native_engine/impl/ark/ark_native_reference.{h,cpp}`、`ark_sendable_native_reference.{h,cpp}` |
 
 ### 测试锚点
 
 | 测试类型 | 路径/类名 |
 |---|---|
 | 引擎测试 | `test/unittest/engine/test_ark.cpp` |
-| 空闲监控 | `test/unittest/test_ark_idle_monitor.cpp` |
 | 引用生命周期与类型查询 | `test/unittest/test_napi.cpp`、`test_napi_context.cpp`、`test_napi_global_ref_track.cpp` |
 | pending exception | `test/unittest/test_napi_pendingexception.cpp` |
 | 性能/临界 | `test/unittest/test_napi_performance.cpp`、`test_napi_critical.cpp` |
-| Hybrid/Sendable | `test/unittest/test_napi_hybrid.cpp`、`test_sendable_napi.cpp` |
-| Fuzz | `test/fuzztest/loadarkmodule_fuzzer/`、`executejsbin_fuzzer/`、`runactor_fuzzer/` |
+| Sendable 引用 | `test/unittest/test_sendable_napi.cpp` |
+| Fuzz | `test/fuzztest/executejsbin_fuzzer/`、`runactor_fuzzer/` |

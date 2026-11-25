@@ -1,9 +1,10 @@
 # AGENTS.md — `test/`
 
-作用域：仅本目录（`test/unittest/` + `test/fuzztest/`）。全局约束、构建与运行命令见仓库根 `AGENTS.md` §2/§5，
+作用域：仅本目录中 NAPI 引擎/API/异步/引用/构建测试的在册部分（`test/unittest/` + `test/fuzztest/`）。
+全局约束、构建与运行命令见仓库根 `AGENTS.md` §2/§5，
 本文件不复制，只做目录级细化。被测领域的行为契约在 `../docs/knowledge/`，按需加载。
 
-本目录（`test/` 自身，不含 `../module_manager/test/`）：39 个 C++ 文件、**32.7k 代码行**（剔注释与空行）、
+本目录物理规模：39 个 C++ 文件、**32.7k 代码行**（剔注释与空行）、
 45.4k 物理行，约占仓库代码量的 **1/4**。它是改动的主要验证入口。
 
 ## 1. 目录结构
@@ -11,7 +12,7 @@
 ```
 test/
 ├── unittest/                 # gtest + OHOS hydra(HWTEST) 单测
-│   ├── BUILD.gn              # config / template / 9 个本地 target / group("unittest")
+│   ├── BUILD.gn              # config / template / 7 个在册本地 target / group("unittest")
 │   ├── ut.gni                # common_include 等共享变量（含已失效的 jerryscript 变量）
 │   ├── engine/
 │   │   ├── test_ark.cpp      # 测试宿主：自带 main()、创建 VM 与 ArkNativeEngine，并含若干引擎级用例
@@ -19,16 +20,12 @@ test/
 │   │   │                     #         LoggerCollector、BasicDeathTest、NapiAsyncWorkTestData
 │   │   └── test_jerryscript.cpp   # 未接线（见 §5）
 │   ├── common/test_common.h  # 断言与异常辅助宏（ASSERT_CHECK_CALL / ASSERT_CHECK_VALUE_TYPE / NAPI_THROW_ERROR …）
-│   ├── cj_native/            # Cangjie 互操作单测（独立 target 组，依赖 ark_interop / cj_envsetup）
 │   └── test_napi*.cpp、test_ark_*.cpp、test_sendable_napi.cpp、test_shared_module.cpp、
 │       test_worker_manager.cpp
-└── fuzztest/                 # 6 个同构 libFuzzer 工程（脚本执行/模块加载入口）
-    ├── BUILD.gn              # group("fuzztest") → 6 个子目录的 :fuzztest
+└── fuzztest/                 # 5 个在册同构 libFuzzer 工程（脚本执行入口）
+    ├── BUILD.gn              # group("fuzztest") 聚合各子目录的 :fuzztest
     └── <name>_fuzzer/{BUILD.gn, <name>_fuzzer.{h,cpp}, project.xml, corpus/init}
 ```
-
-**边界**：`module_manager/test/` 不在本目录，由 `../module_manager/` 自行接线；本目录的 `group("unittest")`
-不包含它，改动模块管理要另外跑那套测试。
 
 ## 2. 接线三段式（新增/改名测试文件必须走完）
 
@@ -49,20 +46,19 @@ test/
 - `deps = [ "../..:ace_napi" ]`（即被测产物）；`external_deps`：`googletest`(gtest + gtest_main)、`libuv`、`hilog`、
   `c_utils`、`eventhandler`、`bounds_checking_function`
 
-现成 target 一览（便于选择落点）：
+在册 target 一览（便于选择落点）：
 
 | target（group 内） | sources |
 | --- | --- |
 | `test_ark_unittest_base` | `test_napi.cpp`、`test_napi_context.cpp`、`test_napi_global_ref_track.cpp`、`test_sendable_napi.cpp`、`test_shared_module.cpp` |
 | `test_ark_unittest_errorcode` | `test_napi_errorcode.cpp`、`test_napi_pendingexception.cpp` |
 | `test_ark_unittest_threadsafe` | `test_napi_threadsafe.cpp` |
-| `test_ark_unittest_hybrid` / `_idle_monitor` / `_critical` / `_hook_list` | 各自同名文件 |
+| `test_ark_unittest_critical` / `_hook_list` | 各自同名文件 |
 | `test_unittest_sendevent`（裸 `ohos_unittest`） | `engine/test_ark.cpp` + `test_napi_sendevent.cpp` |
 | `test_worker_manager`（裸 `ohos_unittest`） | `test_worker_manager.cpp`；**不走 `ace_napi_unittest_config`**、无 `common_include`（`NAPI_TEST` 通过裸 `defines` 自行设置） |
-| `cj_native:cj_native_unittest` | `test_ark_interop`（3 个源文件）、`test_ffi_data`；`is_ohos && current_cpu == "arm64"` 时才加 `test_cj_backtrace` |
 
 > 写新用例时若需要 `test.h`/`test_common.h`/`NAPI_TEST`，**不要**塞进 `test_worker_manager` 这类裸 target；
-> 放进 `test_ark_unittest` 系列，或按 `cj_native` 的方式自建 target 并显式补齐 configs。
+> 放进 `test_ark_unittest` 系列，或自建 target 并显式补齐 configs。
 
 ## 3. 用例编写约定
 
@@ -110,8 +106,8 @@ test/
 
 ## 4. Fuzz 工程约定
 
-6 个工程完全同构：`executejsbin`、`loadarkmodule`、`runactor`、`runbufferscript`、`runscriptbuffer`、`runscriptpath`
-（对应 `ExecuteJsBinFuzzTest` / `LoadArkModuleFuzzTest` / `RunActorFuzzTest` / `RunBufferScriptFuzzTest` /
+5 个在册工程完全同构：`executejsbin`、`runactor`、`runbufferscript`、`runscriptbuffer`、`runscriptpath`
+（对应 `ExecuteJsBinFuzzTest` / `RunActorFuzzTest` / `RunBufferScriptFuzzTest` /
 `RunScriptBufferFuzzTest` / `RunScriptPathFuzzTest`）。每个目录含：
 
 - `BUILD.gn`：`ohos_fuzztest("<Name>FuzzTest")` + `group("fuzztest")`；`configs = ["../../..:ace_napi_config"]`、
@@ -120,16 +116,14 @@ test/
 - `project.xml`：`max_len 1000`、`max_total_time 300`、`rss_limit_mb 4096`
 - `corpus/init`：种子输入（内容为 `FUZZ`）
 
-改动脚本执行/模块加载入口（`module_manager` 的加载路径、`native_engine` 的 run-script 门面）时，
-**这 6 个骨架要同视同改**——它们互为拷贝，只改一个通常是不够的。
+改动脚本执行入口（`native_engine` 的 run-script 门面）时，
+**这 5 个在册骨架要同视同改**——它们互为拷贝，只改一个通常是不够的。
 
 ## 5. 已知陷阱（不要踩，也不要顺手"修好"而不告知）
 
-1. **4 个测试文件未被任何 `BUILD.gn`/`*.gni` 引用**，因此不会被构建、也不会被 `-t UT` 跑到：
-   `unittest/test_ark_api_allowlist.cpp`(134 行)、`unittest/test_napi_ext.cpp`(689 行)、
-   `unittest/test_napi_performance.cpp`(641 行)、`unittest/engine/test_jerryscript.cpp`(62 行)。
-   仓库根 `AGENTS.md` §5.2 把 `test_ark_api_allowlist` 列为公共 API 变更的验证项，
-   但**它当前不在任何 target 里**——要执行需先按 §2 把它接线，或在回复中明确说明该项无法运行。
+1. **3 个在册测试文件未被任何 `BUILD.gn`/`*.gni` 引用**，因此不会被构建、也不会被 `-t UT` 跑到：
+   `unittest/test_napi_ext.cpp`(689 行)、`unittest/test_napi_performance.cpp`(641 行)、
+   `unittest/engine/test_jerryscript.cpp`(62 行)。
 2. **`ut.gni` 的 `common_include` 有 4 条失效路径**：`./common`、`./engine` 有效，而
    `../../napi/interfaces/inner_api`、`../../napi/interfaces/kits`、`../../napi/native_engine`、
    `../../napi/native_engine/impl/ark` 按 GN 规则相对 `test/unittest/` 解析后指向不存在的目录
@@ -138,11 +132,7 @@ test/
 3. **`ut.gni` 里的 `jerryscript_include` / `jerryscript_deps` 是残留**：它们指向不存在的
    `native_engine/impl/jerryscript`、`//third_party/jerryscript` 与未定义的 target `ace_napi_jerryscript`；
    `native_engine/impl/` 现在只有 `ark/`。**不要试图恢复 JerryScript 测试链路**，除非任务明确要求。
-4. **`cj_native/BUILD.gn` 引用了不存在的 include 目录** `interfaces/inner_api/cjffi/ark_interop_helper/`
-   （该目录不存在；实际只有 `ark_interop`、`cj_backtrace`、`cj_ffi`、`native`）。
-5. **`test_cj_backtrace` 只在 `is_ohos && current_cpu == "arm64"` 进入 group**：非 arm64 主机上"没跑它"是预期，
-   不要据此判定回溯功能通过。
-6. **`test_napi.cpp` 是 19k 物理行的单体文件**（13.4k 代码行，占 `test/` 物理行数约 42 %）。定位失败用例请配合
+4. **`test_napi.cpp` 是 19k 物理行的单体文件**（13.4k 代码行，占 `test/` 物理行数约 42 %）。定位失败用例请配合
    `engine/test_ark.cpp` 里 `GTEST_FLAG(output) = "xml:./"` 生成的 XML 报告，不要靠全文搜索盲改。
 
 ## 6. 运行方式
@@ -160,15 +150,12 @@ test/
 | 公共 API 行为面（类型/属性/对象/函数/字符串…） | `test_napi.cpp`（base）、`test_napi_context.cpp` |
 | 错误码、pending exception、last_error | `test_napi_errorcode.cpp`、`test_napi_pendingexception.cpp`（errorcode） |
 | 异步 / TSFN / 事件循环 | `test_napi_threadsafe.cpp`、`test_napi_sendevent.cpp` |
-| 引用生命周期 / Sendable / Hybrid | `test_sendable_napi.cpp`、`test_napi_global_ref_track.cpp`、`test_napi_hybrid.cpp` |
-| 作用域（CriticalScope / ContainerScope） | `test_napi_critical.cpp` |
+| 引用生命周期 / Sendable | `test_sendable_napi.cpp`、`test_napi_global_ref_track.cpp` |
+| 作用域（CriticalScope） | `test_napi_critical.cpp` |
 | AsyncHook 列表行为（空 stub 事实） | `test_ark_hook_list.cpp` |
-| 空闲 GC / finalizer | `test_ark_idle_monitor.cpp` + `engine/test_ark.cpp` |
 | Worker 管理 | `test_worker_manager.cpp` |
-| 模块共享/加载 | `test_shared_module.cpp`；模块管理主体测试在 `../module_manager/test/` |
-| Cangjie 互操作、cj_backtrace、ffi 数据 | `cj_native/test_ark_interop*.cpp`、`test_cj_backtrace.cpp`、`test_ffi_data.cpp` |
+| 共享模块 | `test_shared_module.cpp` |
 | 脚本执行入口的健壮性 | `fuzztest/{executejsbin,runactor,runscriptbuffer,runbufferscript,runscriptpath}_fuzzer` |
-| 模块加载健壮性 | `fuzztest/loadarkmodule_fuzzer` |
 
 ## 8. 局部 Do / Must / Ask-before
 
@@ -177,7 +164,6 @@ Must：
 - 新增测试文件 → 同时登记 `sources` 与 `group("unittest")` 的 `deps`
 - 新增异步/TSFN 用例 → 用 `UVLoopRunner::Run()` 显式驱动 uv loop，并确保 TSFN 在 env 销毁前关闭（根文档 §4.3）
 - 断言错误路径 → 同时断言接口返回值与 `napi_get_last_error_info`
-- 新增 `cj_native` 用例且依赖引擎符号 → 同步检查 `ark_interop` / `cj_support` 两端
 
 Do not：
 
@@ -190,6 +176,6 @@ Do not：
 
 Ask before：
 
-- 接线或删除 §5.1 的 4 个未引用测试文件（会改变实际运行的测试集合）
+- 接线或删除 §5.1 的 3 个在册未引用测试文件（会改变实际运行的测试集合）
 - 新增需要设备/服务侧配合的测试 target
 - 修改 `engine/test_ark.cpp` 的 VM 创建与销毁顺序（影响本目录所有 ark 单测）

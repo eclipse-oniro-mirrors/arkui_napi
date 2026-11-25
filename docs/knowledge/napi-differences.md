@@ -1,6 +1,6 @@
 # NAPI 差异知识
 
-本文记录异步操作、引用管理、API 表面和错误处理的 OpenHarmony 差异点。与 Node.js N-API 一致的基础概念不再展开。引擎与 Ark 实现见 `docs/knowledge/engine.md`，模块加载见 `docs/knowledge/module-manager.md`，Cangjie 互操作见 `docs/knowledge/cjffi.md`，构建见 `docs/knowledge/build-platform.md`。
+本文记录异步操作、引用管理、API 表面和错误处理的 OpenHarmony 差异点。与 Node.js N-API 一致的基础概念不再展开。引擎与 Ark 实现见 `docs/knowledge/engine.md`，构建见 `docs/knowledge/build-platform.md`。
 
 ## 与 Node.js N-API 的关键差异
 
@@ -23,7 +23,6 @@
 | 引用追踪 | — | 侵入式双向链表，仅追踪 `ownership_==RUNTIME`（ark_native_reference.cpp:87-92） | USER-owned 不追踪 |
 | Finalizer 时序 | 同步 | 批量：Worker 同步；主线程默认异步，pending>500MB 切同步（ark_native_engine.cpp:2123-2191） | 非立即执行 |
 | Sendable 引用 | — | `SendableGlobal<JSValueRef>`，mutex 保护，**无 refCount**（ark_sendable_native_reference.h:34） | 独有类型 |
-| Hybrid 引用 | — | `ArkXRefNativeReference`：XRef 跨 VM，refCount 同普通引用（ark_hybrid_native_reference.cpp:28） | 独有类型 |
 | Worker 退出清理 | — | Sendable **无自动清理**，必须手动删除（ark_sendable_native_reference.h:30） | 不清理则泄漏 |
 
 ### API 表面
@@ -31,10 +30,8 @@
 | 概念 | Node.js N-API | OpenHarmony NAPI | 影响 |
 |---|---|---|---|
 | API 版本 | 可变 | `NAPI_VERSION=8`（固定，native_api.h:19） | 与 N-API version 8 对齐 |
-| 模块版本 | NAPI_MODULE_VERSION | `=1`，仅透传，**无版本校验**（native_node_api.cpp:45） | 不检查兼容性 |
 | API 废弃 | — | `NAPI_INNER_EXTERN` → `__attribute__((__deprecated__))`，仅 `napi_adjust_external_memory` 使用（native_api.h:30-42） | 调用触发警告 |
 | 符号版本 | — | `ace_napi.versionscript` 仅 arm64+build_ext_path 启用（BUILD.gn:287-295） | 仅 arm64 校验 |
-| Hybrid API | — | `native_node_hybrid_api.h`：XGC 跨引用、stackinfo、hybrid wrap 等 | 非跨引擎标准 |
 
 ### 错误处理
 
@@ -78,7 +75,6 @@
 - `NAPI_INNER_EXTERN` 非测试构建触发废弃警告——调用 `napi_adjust_external_memory` 注意。
 - versionscript 仅 arm64 启用——非 arm64 平台不校验符号可见性。
 - napi_status 含 3 个 Ark 专有值(22-24)——不要假设最大 21。
-- `nm_version` 无版本校验——不要假设有兼容性检查。
 
 ## 修改前检查
 
@@ -110,7 +106,6 @@
 | NativeSendable | `native_engine/native_sendable.{h,cpp}` |
 | 公共 API | `interfaces/kits/napi/native_api.h`、`native_engine/native_api.cpp` |
 | 内部 API | `interfaces/inner_api/napi/native_node_api.h`、`native_engine/native_node_api.cpp` |
-| Hybrid API | `interfaces/inner_api/napi/native_node_hybrid_api.h`、`native_engine/native_node_hybrid_api.cpp` |
 | 转换宏、last_error 设置与查询 | `native_engine/native_api_internal.h`、`native_engine/native_engine.h`、`native_engine/native_api.cpp` |
 | 数值提取与边界校验 | `native_engine/native_api.cpp`（`napi_get_value_int32`、`napi_get_value_uint32` 及使用索引/枚举的接口） |
 | 符号版本 | `ace_napi.versionscript` |
@@ -126,6 +121,5 @@
 | Sendable | `test/unittest/test_sendable_napi.cpp` |
 | 基础/扩展 API | `test/unittest/test_napi.cpp`、`test_napi_ext.cpp` |
 | 错误入参与边界值 | `test/unittest/test_napi.cpp`、`test_napi_errorcode.cpp`、`sample/native_module_systemtest/test_napi.cpp` |
-| Hybrid/白名单 | `test/unittest/test_napi_hybrid.cpp`、`test_ark_api_allowlist.cpp` |
-| 错误码、异常与 last_error | `test/unittest/test_napi_errorcode.cpp`、`test_napi_pendingexception.cpp`、`test_napi_critical.cpp`、`test_napi.cpp`（`NapiLoadModuleWithInfoTest004`） |
+| 错误码、异常与 last_error | `test/unittest/test_napi_errorcode.cpp`、`test_napi_pendingexception.cpp`、`test_napi_critical.cpp` |
 | Fuzz | `test/fuzztest/runscriptpath_fuzzer/`、`runscriptbuffer_fuzzer/` |

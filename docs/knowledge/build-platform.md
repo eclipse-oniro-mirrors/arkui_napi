@@ -1,6 +1,6 @@
 # 构建与平台知识
 
-本文只记录 GN 构建配置、平台适配和工具层。API 分层见 `docs/knowledge/napi-differences.md`，模块注册见 `docs/knowledge/module-manager.md`。
+本文只记录 GN 构建配置、平台适配和工具层。API 分层见 `docs/knowledge/napi-differences.md`。
 
 ## 核心模型
 
@@ -31,7 +31,6 @@ NAPI 使用 GN（Generate Ninja）构建系统。核心配置在 `BUILD.gn`（�
 
 | 开关 | 默认值 | 作用 |
 |---|---|---|
-| `napi_enable_container_scope` | false | 容器作用域特性 |
 | `napi_enable_memleak_debug` | true | 内存泄漏调试 |
 | `napi_feature_enable_pgo` | false | PGO 构建 |
 | `napi_feature_pgo_path` | "" | PGO profdata 路径 |
@@ -44,7 +43,7 @@ target_cpu == "arm64" && !is_arkui_x && is_ohos && !is_emulator
   → enabled_data_protector = true
 ```
 
-BUILD.gn 含 17 个 target：`ace_napi_config`/`data_protector_config`/`module_manager_config`(config) → `pac_data_protector_feature`/`ace_napi_static`(source_set) → `ace_napi`(is_arkui_x 时 static_library，否则 shared_library) → `ace_napi_test` → CJ FFI targets(`cj_bind_native`/`cj_bind_ffi`/`cj_ffi_libraries`) → `napi_packages`/`napi_packages_test`(group)。依赖：ace_napi 依赖 ets_runtime、libuv、icu、c_utils、hilog、hitrace、hiview、eventhandler、ffrt、bounds_checking_function 等 17 个部件；对外暴露 6 组 inner_kits（ace_napi/cj_bind_ffi/cj_bind_native/ark_interop/napi_packages）。hb 构建流程：独立项目（`//foundation/arkui` 下仅 napi）用 `hb build napi -i`(不含测试)/`-t`(含测试)，依赖更新 `bash ./build/prebuilts_config.sh`。PGO 构建路径：`napi_feature_enable_pgo=true` + `napi_feature_pgo_path` 传入 profdata 目录，编译时 `-fprofile-use=${path}/libace_napi.profdata`，链接时 `-Wl,-mllvm,-align-all-functions=4`（BUILD.gn:220-231,273-281）。
+BUILD.gn 中本文保留的 target 包括：`ace_napi_config`/`data_protector_config`(config) → `pac_data_protector_feature`/`ace_napi_static`(source_set) → `ace_napi`(is_arkui_x 时 static_library，否则 shared_library) → `ace_napi_test` → `napi_packages`/`napi_packages_test`(group)。依赖：ace_napi 依赖 ets_runtime、libuv、icu、c_utils、hilog、hitrace、hiview、eventhandler、ffrt、bounds_checking_function 等 17 个部件；本文保留的 inner_kits 包括 `ace_napi`/`napi_packages`。hb 构建流程：独立项目（`//foundation/arkui` 下仅 napi）用 `hb build napi -i`(不含测试)/`-t`(含测试)，依赖更新 `bash ./build/prebuilts_config.sh`。PGO 构建路径：`napi_feature_enable_pgo=true` + `napi_feature_pgo_path` 传入 profdata 目录，编译时 `-fprofile-use=${path}/libace_napi.profdata`，链接时 `-Wl,-mllvm,-align-all-functions=4`（BUILD.gn:220-231,273-281）。
 
 `source_set` 拆分会改变对象文件和依赖的传播边界。条件实现必须保证开关关闭时有编译来源、开启时不重复编译，并让静态库、共享库、测试和预览器等最终消费者获得完整符号。
 
