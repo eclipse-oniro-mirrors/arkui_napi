@@ -1,6 +1,6 @@
 # NAPI 差异知识
 
-本文记录异步操作、引用管理、API 表面和错误处理的 OpenHarmony 差异点。与 Node.js N-API 一致的基础概念不再展开。引擎与 Ark 实现见 `docs/knowledge/engine.md`，构建见 `docs/knowledge/build-platform.md`。
+本文记录异步操作、引用管理、API 行为差异和错误处理的 OpenHarmony 差异点。公共与 inner API 的受众、声明到发布流程、ABI 与 versionscript 维护规则以 `docs/knowledge/api-surface.md` 为准。与 Node.js N-API 一致的基础概念不再展开。引擎与 Ark 实现见 `docs/knowledge/engine.md`，构建见 `docs/knowledge/build-platform.md`。
 
 ## 与 Node.js N-API 的关键差异
 
@@ -21,7 +21,7 @@
 | 概念 | Node.js N-API | OpenHarmony NAPI | 影响 |
 |---|---|---|---|
 | 引用追踪 | — | 侵入式双向链表，仅追踪 `ownership_==RUNTIME`（ark_native_reference.cpp:87-92） | USER-owned 不追踪 |
-| Finalizer 时序 | 同步 | 批量：Worker 同步；主线程默认异步，pending>500MB 切同步（ark_native_engine.cpp:2123-2191） | 非立即执行 |
+| Finalizer 时序 | 同步 | 批量：非主线程由 `ArkNativeEngine::PostFinalizeTasks` 同步调用 `RunCallbacks`；主线程默认异步，当 pending native binding size 超过 500MB 且当前 `ArkFinalizersPack::GetTotalNativeBindingSize()` 非零时同步调用 `RunCallbacks`；异步 finalizer 由 `RunAsyncCallbacks` 执行。阈值是 `ark_native_engine.h` 中的 `FINALIZERS_PACK_PENDING_NATIVE_BINDING_SIZE_THRESHOLD` | 非立即执行 |
 | Sendable 引用 | — | `SendableGlobal<JSValueRef>`，mutex 保护，**无 refCount**（ark_sendable_native_reference.h:34） | 独有类型 |
 | Worker 退出清理 | — | Sendable **无自动清理**，必须手动删除（ark_sendable_native_reference.h:30） | 不清理则泄漏 |
 
@@ -31,7 +31,7 @@
 |---|---|---|---|
 | API 版本 | 可变 | `NAPI_VERSION=8`（固定，native_api.h:19） | 与 N-API version 8 对齐 |
 | API 废弃 | — | `NAPI_INNER_EXTERN` → `__attribute__((__deprecated__))`，仅 `napi_adjust_external_memory` 使用（native_api.h:30-42） | 调用触发警告 |
-| 符号版本 | — | `ace_napi.versionscript` 仅 arm64+build_ext_path 启用（BUILD.gn:287-295） | 仅 arm64 校验 |
+| 符号版本 | — | `ace_napi.versionscript` 的启用条件与 global/local 规则见 `docs/knowledge/api-surface.md` | 不是逐符号 allowlist |
 
 ### 错误处理
 
@@ -53,8 +53,8 @@
 - 必须 context env 销毁前释放所有 TSFN。原因：否则 HILOG_FATAL。
 - 不要跨 Worker 用普通引用。原因：需 Sendable 变体。
 - 必须 Worker 退出前手动删除 Sendable 引用。原因：无自动清理。
-- 不要修改公共 API 签名/错误码。原因：对外稳定。
-- 必须 修改 API 后更新 `ace_napi.versionscript`。
+- 未经明确人类确认，不要修改公共 API 签名、错误码或生命周期语义；确认和后续检查分别按 `docs/knowledge/api-surface.md` 的 API-01、API-02 执行。原因：公共 API 是对外契约，代码证据不能替代授权。
+- 必须 在 API 变更时检查 `ace_napi.versionscript`，只有全局导出或 local 屏蔽需求变化时才修改。原因：当前 `global: *` 与 local masks 不是逐符号白名单，维护规则见 `docs/knowledge/api-surface.md`。
 - 必须 有效 `env` 的失败路径通过 `napi_set_last_error` 或配套宏返回，成功路径清除旧错误；不要直接返回非 `napi_ok`。原因：接口状态必须与 `napi_get_last_error_info` 一致。替换错误宏时还必须保持条件极性。
 - 必须 检查每次 NAPI 调用的 `napi_status` 后再使用出参；不要把调用前的哨兵值或旧值当成接口结果。原因：`undefined` 等非空错误类型可能通过指针检查，但类型校验失败时出参保持调用前的值。
 - 必须 在 NAPI 实现中对即将作为数组下标、表索引、枚举分派值、长度或偏移量的数据做独立的类型与范围校验，再访问内存。原因：调用方可能忽略前序转换错误，且有符号 `-1` 转为无符号后会成为极大值。
@@ -73,7 +73,7 @@
 - `last_error` 是 env-local 非 thread_local——容易误判。
 - `undefined` 不会被非空检查拦截；忽略数值提取错误后使用预置的 `-1` 会造成负下标，改为无符号只会将其变为极大值。
 - `NAPI_INNER_EXTERN` 非测试构建触发废弃警告——调用 `napi_adjust_external_memory` 注意。
-- versionscript 仅 arm64 启用——非 arm64 平台不校验符号可见性。
+- `ace_napi.versionscript` 不是逐符号白名单；启用条件与检查、修改规则见 `docs/knowledge/api-surface.md`。
 - napi_status 含 3 个 Ark 专有值(22-24)——不要假设最大 21。
 
 ## 修改前检查
@@ -83,8 +83,8 @@
 - [ ] context env 销毁前是否释放了所有 TSFN？
 - [ ] 跨 Worker 是否用了 Sendable 变体？
 - [ ] Sendable 引用是否有手动删除路径？
-- [ ] 公共 API 签名/错误码是否变更？（需评审）
-- [ ] `ace_napi.versionscript` 是否同步更新？
+- [ ] 是否拟修改公共 API 签名、错误码或生命周期语义？如是，是否已按 API-01 取得明确人类确认并按 API-02 检查？
+- [ ] 是否已检查 `ace_napi.versionscript`，并且仅在全局导出或 local 屏蔽需求变化时修改？
 - [ ] 错误返回与 last_error 是否一致、成功路径是否清除旧错误、错误宏的条件极性是否保持？UT 是否同时断言接口状态和扩展错误？
 - [ ] 每个 NAPI 出参是否只在返回 `napi_ok` 后读取，错误路径是否避免使用旧值或哨兵值？
 - [ ] 数组下标、枚举、长度和偏移量是否在最终使用点做了类型与范围兜底校验？
@@ -104,6 +104,7 @@
 | NativeReference 抽象 | `native_engine/native_reference.h` |
 | ReferenceManager | `reference_manager/native_reference_manager.{h,cpp}` |
 | NativeSendable | `native_engine/native_sendable.{h,cpp}` |
+| Finalizer 批量处理与同步切换 | `native_engine/impl/ark/ark_native_engine.{h,cpp}`（`ArkNativeEngine::PostFinalizeTasks`、`RunCallbacks`、`RunAsyncCallbacks`、`FINALIZERS_PACK_PENDING_NATIVE_BINDING_SIZE_THRESHOLD`）、`native_engine/impl/ark/ark_finalizers_pack.h`（`ArkFinalizersPack`） |
 | 公共 API | `interfaces/kits/napi/native_api.h`、`native_engine/native_api.cpp` |
 | 内部 API | `interfaces/inner_api/napi/native_node_api.h`、`native_engine/native_node_api.cpp` |
 | 转换宏、last_error 设置与查询 | `native_engine/native_api_internal.h`、`native_engine/native_engine.h`、`native_engine/native_api.cpp` |
@@ -119,7 +120,8 @@
 | Worker 管理 | `test/unittest/test_worker_manager.cpp` |
 | 引用追踪 | `test/unittest/test_napi_global_ref_track.cpp` |
 | Sendable | `test/unittest/test_sendable_napi.cpp` |
-| 基础/扩展 API | `test/unittest/test_napi.cpp`、`test_napi_ext.cpp` |
+| 基础/扩展 API | `test/unittest/test_napi.cpp` 已接入 `test_ark_unittest_base`，可作为执行验证项；`test/unittest/test_napi_ext.cpp` 仅作未接线源码锚点，不在 `test/unittest/BUILD.gn` 的 target `sources` 中，不是执行验证项，状态只能记为 `not-run` |
 | 错误入参与边界值 | `test/unittest/test_napi.cpp`、`test_napi_errorcode.cpp`、`sample/native_module_systemtest/test_napi.cpp` |
+| 未接线源码锚点，非验证项 | `test/unittest/test_ark_api_allowlist.cpp`：不在 `test/unittest/BUILD.gn`，且无 `HWTEST_F`、`TEST_F` 或 `TEST` 注册；当前不是可运行验证项，不得列入测试命令或作为通过证据 |
 | 错误码、异常与 last_error | `test/unittest/test_napi_errorcode.cpp`、`test_napi_pendingexception.cpp`、`test_napi_critical.cpp` |
 | Fuzz | `test/fuzztest/runscriptpath_fuzzer/`、`runscriptbuffer_fuzzer/` |

@@ -1,11 +1,19 @@
+---
+repo_path: foundation/arkui/napi/native_engine
+subsystem: arkui
+component: napi
+primary_language: C++
+last_updated: 2026-11-26
+---
+
 # AGENTS.md — `native_engine/`
 
 作用域：仅本目录。全局约束与构建/测试命令见仓库根 `AGENTS.md`，本文件不复制，只做目录级细化。
 领域知识（引擎模型、与 Node.js N-API 的差异）在 `../docs/knowledge/engine.md` 与 `../docs/knowledge/napi-differences.md`，按需加载。
 
-## 1. 目录定位与体量
+## 1. 目录定位
 
-本目录是全仓**生产代码的主体**：约 15.7k 代码行（已剔注释与空行），占仓库生产代码超 50 %。
+本目录是全仓**生产代码的主体**，由抽象层/门面文件与 `impl/ark/` 下的 Ark 引擎实现组成。
 
 §2 的文件清单仅覆盖本指南保留的引擎范围，不是目录完整清单；未列出的源文件仍可能存在。
 
@@ -20,9 +28,9 @@
 
 | 组 | 文件 | 说明 |
 | --- | --- | --- |
-| API 门面 | `native_api.cpp`(5090 行)、`native_node_api.cpp` | 对外/inner API 的实现入口，逐函数薄封装后调 `NativeEngine` 虚接口 |
+| API 门面 | `native_api.cpp`、`native_node_api.cpp` | 对外/inner API 的实现入口，逐函数薄封装后调 `NativeEngine` 虚接口 |
 | 门面宏 | `native_api_internal.h` | `NAPI_PREAMBLE` / `CHECK_ENV` / `CHECK_ARG` / `RETURN_STATUS_IF_FALSE` / `GET_RETURN_STATUS` / `CROSS_THREAD_CHECK` / `WEAK_CROSS_THREAD_CHECK` 的定义处 |
-| 引擎基类 | `native_engine.{h,cpp}`（919 + 1319 行） | 跨引擎契约：纯虚接口 + 通用实现（错误管理、线程校验、`lastException_` 等） |
+| 引擎基类 | `native_engine.{h,cpp}` | 跨引擎契约：纯虚接口 + 通用实现（错误管理、线程校验、`lastException_` 等） |
 | 值/引用类型 | `native_value.h`、`native_property.h`、`native_reference.h`、`native_deferred.h`、`native_sendable.{h,cpp}`、`native_utils.h` | 抽象句柄类型与 `napi_value↔JSValueRef` 转换 |
 | 异步 | `native_async_work.{h,cpp}`、`native_safe_async_work.{h,cpp}`、`native_async_context.h`、`native_async_hook_context.h` | AsyncWork/TSFN 抽象；AsyncHook 是空 stub（见知识文档） |
 | env/事件/Worker | `native_create_env.{h,cpp}`、`native_event.{h,cpp}`、`worker_manager.{h,cpp}` | env 创建入口、`napi_send_event` 路径、Worker 数量与生命周期 |
@@ -31,7 +39,7 @@
 
 | 组 | 文件 | 说明 |
 | --- | --- | --- |
-| 引擎主体 | `ark_native_engine.{h,cpp}`（3765 + 601 行） | 全仓第二大生产文件。**有两个构造函数**：主 env 版 `ArkNativeEngine(vm, jsEngine, isLimitedWorker)`（:499–570）与子 env/Worker 版 `ArkNativeEngine(parent, vm, context)`（:578），初始化链改动要同时考虑两处；链上语义先读 `docs/knowledge/engine.md`「核心模型」 |
+| 引擎主体 | `ark_native_engine.{h,cpp}` | **有两个构造函数**：主 env 版 `ArkNativeEngine(vm, jsEngine, isLimitedWorker)` 与子 env/Worker 版 `ArkNativeEngine(parent, vm, context)`，初始化链改动要同时考虑两处；链上语义先读 `docs/knowledge/engine.md`「核心模型」 |
 | 定时器/finalizer | `ark_native_timer.{h,cpp}`、`ark_finalizers_pack.h` | uv_timer、批量 finalizer |
 | 引用实现 | `ark_native_reference.{h,cpp}`、`ark_sendable_native_reference.{h,cpp}` | 普通 / Sendable 两种引用，语义不可互换 |
 | 杂项 | `ark_native_deferred.{h,cpp}`、`ark_native_options.h` | deferred、`NapiOptions`（`ParseProperties()` 为空实现） |
@@ -39,7 +47,7 @@
 ## 3. 构建接线（改本目录必须知道的三件事）
 
 1. **源文件清单在 `../napi.gni` 的 `napi_sources`**，不在本目录的 BUILD.gn（本目录无 BUILD.gn）。
-   修改或新增本目录 `.cpp` 时先核对现有登记。**新增 `.cpp` 而未登记 → `ace_napi` 链接失败**。
+   当前接线以该清单为准；新增、删除或改名 `.cpp` 后必须逐项核对实际源码与清单。**新增 `.cpp` 而未登记 → `ace_napi` 链接失败**。
 2. **头文件搜索路径来自根 `BUILD.gn` 的 `config("ace_napi_config")`**，其中已含
    `native_engine` 与 `native_engine/impl/ark`。因此本目录内 `#include "native_engine/..."`、
    `#include "napi/native_api.h"`、`#include "utils/log.h"` 均可解析；跨目录 include 风格要与现有一致。
@@ -67,9 +75,9 @@
 
 | 目录 | 与 `native_engine/` 的关系 | 注意 |
 | --- | --- | --- |
-| `callback_scope_manager/`（151 行） | `NativeCallbackScope` / `NativeCallbackScopeManager` / `NativeAsyncWrap` 在此 | CallbackScope 含异常语义，不能拿普通 Scope 替代 |
-| `reference_manager/`（45 行） | `NativeReferenceManager` 链表管理引用 | 实现里直接 `reinterpret_cast<ArkNativeReference*>`，**实际是 Ark 专有**，虽不在 `impl/ark/` |
-| `scope_manager/`（3 行代码 / 21 行物理） | 只剩 `native_scope_manager.h`，内容仅一行 `// To be delete` | **NativeScopeManager 已废弃且无 .cpp、不在 `napi_sources`**；不要引入、不要在此目录扩写 |
+| `callback_scope_manager/` | `NativeCallbackScope` / `NativeCallbackScopeManager` / `NativeAsyncWrap` 在此 | CallbackScope 含异常语义，不能拿普通 Scope 替代 |
+| `reference_manager/` | `NativeReferenceManager` 链表管理引用 | 实现里直接 `reinterpret_cast<ArkNativeReference*>`，**实际是 Ark 专有**，虽不在 `impl/ark/` |
+| `scope_manager/` | 只剩 `native_scope_manager.h`，内容仅 `// To be delete` | **NativeScopeManager 已废弃且无 .cpp、不在 `napi_sources`**；不要引入、不要在此目录扩写 |
 
 对外接口头文件不在本目录：`../interfaces/kits/napi/native_api.h`（公共）、
 `../interfaces/inner_api/napi/native_node_api.h`（inner）。
@@ -79,7 +87,7 @@
 
 Do not：
 
-- 不要改 `interfaces/kits/napi/native_api.h` 的签名、错误码、生命周期语义（根文档 §4.2）
+- 在获得根文档 §4.4 的明确人类确认前，不要修改 `interfaces/kits/napi/native_api.h` 的签名、错误码或生命周期语义；确认后必须按 `../docs/knowledge/api-surface.md` 的 API-01、API-02 和变更检查单执行
 - 不要在 execute 回调 / 非 VM 线程调用 napi 接口；不要跨线程传 `napi_env`
 - 不要跨作用域保存原始 `napi_value`（用强 `napi_ref` + 每次 `napi_get_reference_value` 重取）
 - 不要用普通引用跨 Worker（需 Sendable 变体）；Sendable 引用无自动清理
@@ -89,8 +97,8 @@ Do not：
 Must：
 
 - 新增 `.cpp` → 同步登记到 `../napi.gni` 的 `napi_sources`
-- 新增/修改公共 API 实现 → 同步检查头文件声明与 `../ace_napi.versionscript`（注意该脚本实际是
-  `global: *` + local 屏蔽 C++ 标准库符号，不是逐符号白名单；只在导出面被污染时才需要改）
+- 新增/修改公共 API 实现 → 同步检查头文件声明与 `../ace_napi.versionscript`；检查与按需修改规则见
+  `../docs/knowledge/api-surface.md`，不要把该脚本当作逐符号白名单
 - 改异步/引用/作用域路径 → 按 §7 跑对应 UT，不要只跑 `test_napi.cpp`
 
 Ask before（继承根文档 §4.4，本目录额外注意）：
@@ -114,6 +122,14 @@ Ask before（继承根文档 §4.4，本目录额外注意）：
 | CriticalScope（`native_async_work.*`） | `test_ark_unittest_critical` |
 | 异常/错误码路径 | `test_ark_unittest_errorcode`（含 `test_napi_pendingexception.cpp`）；错误路径要同时断言 `napi_get_last_error_info` |
 
+### 7.1 局部 Done 补充
+
+全局 Done、验证状态和反伪造规则继承根 `AGENTS.md` §5.4；本节只增加本目录的可判定完成条件：
+
+- 门面或 `native_api_internal.h` 改动：相关错误路径的测试已同时断言返回状态与 `last_error`；涉及 pending exception 时，已核对 `NAPI_PREAMBLE` 的优先短路与 `GET_RETURN_STATUS` 收口。
+- 新增、删除或改名 `.cpp`：实际源码与 `napi_sources` 已逐项核对，受影响 target 的构建状态已按根 §5.4 记录。
+- 公共 API 或导出面改动：声明、`ace_napi.versionscript` 和适用配置下的导出符号已检查；不适用项有明确理由。
+
 ## 8. 阅读顺序（动手前）
 
 1. `../docs/knowledge/engine.md` — 核心模型、关键差异、组件约束、代码/测试锚点
@@ -123,6 +139,14 @@ Ask before（继承根文档 §4.4，本目录额外注意）：
 
 ## 9. 已知现状提示
 
-- `native_api.cpp` 单文件 ~5 k 行、`ark_native_engine.cpp` ~3.7 k 行：改动时优先小步提交并跑对应 UT，
-  避免在一个巨型文件里做大范围格式化。
+- `../docs/knowledge/engine.md` 的初始化链描述要与两处 `ArkNativeEngine` 构造函数同步维护；定位以函数名为准，不依赖固定行号。
+- `native_api.cpp` 与 `ark_native_engine.cpp` 都是大型实现文件：改动时优先小步提交并跑对应 UT，避免在一个巨型文件里做大范围格式化。
 - `napi-differences.md` 记录的 `NAPI_VERSION=8` 固定等约束，同样约束本目录的门面实现。
+
+## 10. 历史记录
+
+| 版本 | 日期 | 修改内容 | 作者 |
+| --- | --- | --- | --- |
+| v1.0 | 2026-11-26 | 同步 NAPI 知识库评审修复，保留本目录当前引擎范围与既有约束 | AI-assisted |
+
+v1.0 起开始记录变更历史；不重构或补写未经核实的早期历史。
