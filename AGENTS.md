@@ -18,7 +18,7 @@ last_updated: 2026-11-26
 
 最不可破坏的边界：公共 API 稳定性（`interfaces/kits/napi/native_api.h`）与 Ark VM 线程安全不变量。
 
-## 2. 代码地图
+## 2. 代码导航
 
 ### 2.1 关键目录
 

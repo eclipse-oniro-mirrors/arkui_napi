@@ -103,7 +103,7 @@ checkapi 补充而不替代 API 设计与兼容性评审、ABI 符号检查或�
 
 ### 信任边界与覆盖范围
 
-- **Native 执行边界**：`CreateArkEnv` 通过 `CreateJSVM` 创建 Ark VM。`LoadSoExposed` 使用 `requireNapi` 或 `requireNapiPreview` 触发模块加载与初始化；mixed-SO 回退路径使用 `dlopen`，调用模块的 ABC accessor，再通过 `ExecuteModuleFromBuffer` 执行内嵌 ABC。native constructor、模块初始化和其他模块行为可能在 host 进程中执行。只能处理可信的模块及其依赖、checklist/legal/ignore JSON、工作目录和 host 库搜索路径，绝不能加载不可信第三方二进制；checkapi 不提供沙箱隔离。
+- **Native 执行边界**：`CreateArkEnv` 通过 `CreateJSVM` 创建 Ark VM。`LoadSoExposed` 使用 `requireNapi` 或 `requireNapiPreview` 触发模块加载与初始化；mixed-SO 回退路径使用 `dlopen`，调用模块的 ABC accessor，再通过 `ExecuteModuleFromBuffer` 执行内嵌 ABC。native constructor 和模块初始化代码可能在 host 进程中执行。只能处理可信的模块及其依赖、checklist/legal/ignore JSON、工作目录和 host 库搜索路径，绝不能加载不可信第三方二进制；checkapi 不提供沙箱隔离。
 - **Ignore 授权边界**：`--ignore-file` 条目会合并进每个 kit 的 `legalList`，属于影响授权判定的例外，不是单纯的诊断过滤器。例外必须经过人工评审，并在验证报告中标明来源与适用范围；借助 ignore 得到的干净结果不能表述为无条件的全覆盖通过。
 - **Skip 覆盖边界**：`--skip-module` 命中的模块绕过 `CheckSingleFile` 并增加 `moduleSkipped`，`CheckApiMain` 仍可能在存在跳过时返回成功。被跳过模块没有通过结果，只能记为 `not-run` 或明确记录的人工评审排除项；全覆盖要求 `moduleSkipped == 0`。
 - **退出码语义**：退出码 0 仅表示实际检查范围内 `illegalMap` 与 unknown 模块均为空且 `firstError == CHECK_OK`，不证明跳过模块或 `DeprecatedModules` 废弃桶条目通过。判读时必须联看退出码、`fileFailed`、`moduleSkipped`、unknown 输出与 `DeprecatedModules`，不得只凭退出码 0 宣称全覆盖。
@@ -179,7 +179,7 @@ ninja -C out/<dir> checkapi_samples
 |---|---|
 | 通用测试辅助 | `test/unittest/common/test_common.h` |
 | 测试入口 | `test/unittest/engine/test.h`（engine 层） |
-| 构建目标（条件测试聚合） | `//foundation/arkui/napi:napi_packages_test`：根 `BUILD.gn` 的外层 `!ark_standalone_build` 与组内 `!build_ohos_ndk && !is_arkui_x && !ohos_indep_compiler_enable && !(defined(is_host_product) && is_host_product)` 同时满足时，聚合 `test/unittest:unittest`、`test/fuzztest:fuzztest` 和 `BUILD.gn` 当前显式选择的 sample 子集 |
+| 构建目标（条件测试聚合） | `//foundation/arkui/napi:napi_packages_test`：根 `BUILD.gn` 的外层 `!ark_standalone_build` 与 `group("napi_packages_test")` 的组内条件同时满足时，聚合 `test/unittest:unittest`、`test/fuzztest:fuzztest` 和 `BUILD.gn` 当前显式选择的 sample 子集；完整条件表达式以该 group 为准 |
 | 构建目标（仅库） | `//foundation/arkui/napi:ace_napi` |
 | source_set/DLL 变更 | 构建 `ace_napi` 与 `ace_napi_test`；分别覆盖特性开/关和设备/宿主工具链；用 `llvm-nm`/`readelf`（ELF）或 `dumpbin /exports`（DLL）核对符号，并运行 DevEco Studio 预览器冒烟测试 |
 | checkapi fixture 回归 | `//foundation/arkui/napi/tools:checkapi_samples`，按需执行且不是 `napi_packages_test` 默认成员；命令来源与执行状态见本文 checkapi 小节 |
