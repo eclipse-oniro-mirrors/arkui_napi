@@ -159,6 +159,11 @@ public:
         return isSwitchToBackgroundTask_.load(std::memory_order_relaxed);
     }
 
+    void SetDynamicBackgroundGcActive(bool state)
+    {
+        dynamicBackgroundGcActive_.store(state, std::memory_order_relaxed);
+    }
+
     void SetDuringBackgroundTask(bool state)
     {
         duringBackgroundTask_.store(state);
@@ -279,6 +284,9 @@ public:
     void EnableIdleGC(NativeEngine *engine);
     void UnregisterEnv(NativeEngine *engine);
     void NotifyNeedFreeze(bool needFreeze);
+    // Reports the ArkTS-Sta (static runtime) background GC start/finish; the freeze module is
+    // notified exactly once, after the background GCs of both runtimes have finished.
+    void NotifyStaBackgroundGcState(bool gcStarted);
     ReportDataFunc LoadReportDataFunc();
 
 private:
@@ -309,6 +317,10 @@ private:
     void PostBackgroundSharedGCTask(bool isSwitchToBackground);
     static TRIGGER_IDLE_GC_TYPE GetBackgroundGCType(bool isSwitchToBackground);
     void TryTriggerWorkerLocalGC();
+    // Shared freeze coordination steps, used by both the dynamic runtime GC notifications
+    // (NotifyNeedFreeze) and the ArkTS-Sta background GC notifications.
+    void DeferFreezeLocked();
+    void ReleaseFreezeIfReady();
     enum class WorkerGCResult {
         READY,
         SKIPPED,
@@ -358,6 +370,10 @@ private:
     std::atomic<bool> deferfreeze_ {false};
     std::atomic<bool> isSwitchToBackgroundTask_ {false};
     std::atomic<bool> isBackgroundTask_ {false};
+    // The dynamic runtime background GC session (idle-confirmed compress GC) is running.
+    std::atomic<bool> dynamicBackgroundGcActive_ {false};
+    // Number of ArkTS-Sta (static runtime) background GCs currently running.
+    std::atomic<uint32_t> staBackgroundGcCount_ {0};
     std::atomic<int64_t> idleNotifyCount_ {0};
     std::atomic<int64_t> idleStartTimestamp_ {0};
     std::atomic<int64_t> totalIdleDuration_ {0};
@@ -398,6 +414,8 @@ private:
     std::function<void()> externalClearCallback_;
     std::mutex waitGCFinishjedMutex_;
     std::condition_variable gcFinishCV_;
+    // Serializes freeze coordination decisions (defer/release) of both runtimes.
+    std::mutex freezeCoordinationMutex_;
     std::atomic<bool> duringBackgroundTask_ {false};
 #if defined(ANDROID_PLATFORM) || defined(IOS_PLATFORM)
     static void PostCrossPlatformSwitchBackgroundGCTask();

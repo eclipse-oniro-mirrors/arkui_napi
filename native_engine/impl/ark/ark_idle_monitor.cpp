@@ -374,30 +374,76 @@ void ArkIdleMonitor::NotifyNeedFreeze(bool needFreeze)
         return;
     }
     if (!needFreeze) {
-        if (!deferfreeze_.load(std::memory_order_relaxed)) {
-            deferfreeze_.store(true, std::memory_order_relaxed);
-            ReportDataToRSS(false);
-        } else {
-            // The delay in freezing has been notified
-            HILOG_DEBUG("ArkIdleMonitor: NotifyFreeze Abandoned message");
-        }
-    } else {
-        if (deferfreeze_.load(std::memory_order_relaxed)) {
-            deferfreeze_.store(false, std::memory_order_relaxed);
-            SetSwitchToBackgroundTask(false);
-            if (externalClearCallback_) {
-                TraceScope trace("ArkIdleMonitor:ExternalClearCallback");
-                HILOG_DEBUG("ArkIdleMonitor: External Clear Callback.");
-                CallbackTimerScope timeScope("External Clear Callback");
-                externalClearCallback_();
-            }
-            ReportDataToRSS(true);
-        } else {
-            // It is not in a delayed freeze state, so there is no need to notify the freeze
-            HILOG_DEBUG("ArkIdleMonitor: NotifyFreeze Abandoned message");
-        }
+        std::lock_guard<std::mutex> lock(freezeCoordinationMutex_);
+        DeferFreezeLocked();
+        return;
     }
+    // The dynamic runtime finished its background GC
+    dynamicBackgroundGcActive_.store(false, std::memory_order_relaxed);
+    ReleaseFreezeIfReady();
 #endif
+}
+
+void ArkIdleMonitor::NotifyStaBackgroundGcState(bool gcStarted)
+{
+#if defined(ENABLE_EVENT_HANDLER)
+    if (!gEnableDeferFreeze) {
+        return;
+    }
+    if (gcStarted) {
+        std::lock_guard<std::mutex> lock(freezeCoordinationMutex_);
+        staBackgroundGcCount_.fetch_add(1, std::memory_order_relaxed);
+        if (!IsInBackground()) {
+            return;
+        }
+        // The ArkTS-Sta background GC starts on the background switch itself, before the
+        // idle-confirmed dynamic GC session opens its deferral, so open the window right away.
+        SetSwitchToBackgroundTask(true);
+        DeferFreezeLocked();
+        return;
+    }
+    // The ArkTS-Sta background GC finished
+    if (staBackgroundGcCount_.load(std::memory_order_relaxed) > 0) {
+        staBackgroundGcCount_.fetch_sub(1, std::memory_order_relaxed);
+    }
+    ReleaseFreezeIfReady();
+#endif
+}
+
+void ArkIdleMonitor::DeferFreezeLocked()
+{
+    if (!deferfreeze_.load(std::memory_order_relaxed)) {
+        deferfreeze_.store(true, std::memory_order_relaxed);
+        ReportDataToRSS(false);
+    } else {
+        // The delay in freezing has been notified
+        HILOG_DEBUG("ArkIdleMonitor: NotifyFreeze Abandoned message");
+    }
+}
+
+void ArkIdleMonitor::ReleaseFreezeIfReady()
+{
+    std::function<void()> clearCallback = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(freezeCoordinationMutex_);
+        if (!deferfreeze_.load(std::memory_order_relaxed) ||
+            staBackgroundGcCount_.load(std::memory_order_relaxed) != 0 ||
+            dynamicBackgroundGcActive_.load(std::memory_order_relaxed)) {
+            // It is not in a delayed freeze state, or a runtime background GC is still running
+            HILOG_DEBUG("ArkIdleMonitor: NotifyFreeze Abandoned message");
+            return;
+        }
+        deferfreeze_.store(false, std::memory_order_relaxed);
+        SetSwitchToBackgroundTask(false);
+        clearCallback = externalClearCallback_;
+    }
+    if (clearCallback) {
+        TraceScope trace("ArkIdleMonitor:ExternalClearCallback");
+        HILOG_DEBUG("ArkIdleMonitor: External Clear Callback.");
+        CallbackTimerScope timeScope("External Clear Callback");
+        clearCallback();
+    }
+    ReportDataToRSS(true);
 }
 
 void ArkIdleMonitor::PostLooperTriggerIdleGCTask()
@@ -572,6 +618,12 @@ void ArkIdleMonitor::NotifyChangeBackgroundState(bool inBackground)
     if (!started_ && inBackground) {
         HILOG_DEBUG("ArkIdleMonitor change to background but not started idle check");
     }
+    if (!inBackground) {
+        // The application is back to the foreground and will not be frozen: drop the pending
+        // dynamic session state. The ArkTS-Sta GC count is kept, since it pairs 1:1 with the
+        // start notifications and its stale GCs must not release a future deferral early.
+        dynamicBackgroundGcActive_.store(false, std::memory_order_relaxed);
+    }
     if (IsDeferfreeze() && inBackground) {
         HILOG_WARN("ArkIdleMonitor switch to background,but in deferfreeze");
         SetDeferfreeze(false);
@@ -670,6 +722,8 @@ bool ArkIdleMonitor::SwitchBackgroundCheckGCTask(int64_t timestamp, int64_t idle
         triggerTaskStartTimestamp_ = nowTimestamp;
         CheckWorkerEnvQueue();
         SetSwitchToBackgroundTask(true);
+        // The dynamic background GC session is starting
+        dynamicBackgroundGcActive_.store(true, std::memory_order_relaxed);
         TryTriggerCompressGCOfProcess(true);
         return true;
     } else {
@@ -834,6 +888,7 @@ bool ArkIdleMonitor::CheckIfInBackgroundInCompressGC()
     if (!IsInBackground() && IsSwitchToBackgroundTask()) {
         deferfreeze_.store(false, std::memory_order_relaxed);
         SetSwitchToBackgroundTask(false);
+        dynamicBackgroundGcActive_.store(false, std::memory_order_relaxed);
         return false;
     }
     return true;
