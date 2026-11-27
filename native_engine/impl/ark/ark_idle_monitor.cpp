@@ -39,7 +39,7 @@
 #include "ark_native_engine.h"
 
 // Set to 1 to prefer GlobalCC on switching to background, falling back to local/shared idle GC.
-#define ENABLE_BACKGROUND_GLOBAL_CC 0
+#define ENABLE_BACKGROUND_GLOBAL_CC 1
 
 namespace panda::ecmascript {
 const std::string RES_SCHED_CLIENT_SO = "libressched_client.z.so";
@@ -934,63 +934,51 @@ ArkIdleMonitor::TRIGGER_IDLE_GC_TYPE ArkIdleMonitor::GetBackgroundGCType(bool is
     return isSwitchToBackground ? TRIGGER_IDLE_GC_TYPE::SHARED_CC : TRIGGER_IDLE_GC_TYPE::SHARED_FULL_GC;
 }
 
-#if defined(ENABLE_EVENT_HANDLER)
-bool ArkIdleMonitor::TryTriggerBackgroundGlobalCC()
-{
-    if (mainVM_ == nullptr || mainThreadHandler_ == nullptr || !IsInBackground() ||
-        GetCpuUsage() > IDLE_BACKGROUND_CPU_USAGE) {
-        return false;
-    }
-    std::mutex resultMutex;
-    std::condition_variable resultCV;
-    bool ready = false;
-    bool triggered = false;
-    auto task = [this, &resultMutex, &resultCV, &ready, &triggered]() {
-        std::lock_guard<std::mutex> lock(resultMutex);
-        triggered = mainVM_ != nullptr && IsInBackground() && JSNApi::TryTriggerIdleGlobalCC(mainVM_);
-        ready = true;
-        resultCV.notify_one();
-    };
-    if (!mainThreadHandler_->PostTask(task, "ARKTS_IDLE_TRY_GLOBAL_CC", 0,
-        OHOS::AppExecFwk::EventQueue::Priority::IMMEDIATE)) {
-        HILOG_WARN("ArkIdleMonitor: failed to post GlobalCC attempt");
-        return false;
-    }
-    std::unique_lock<std::mutex> lock(resultMutex);
-    resultCV.wait(lock, [&ready]() { return ready; }); // Wait for the trigger decision, not for GC completion.
-    return triggered;
-}
-#endif
-
 void ArkIdleMonitor::TryTriggerCompressGCOfProcess(bool isSwitchToBackground)
 {
     NotifyNeedFreeze(false);
-#if ENABLE_BACKGROUND_GLOBAL_CC && defined(ENABLE_EVENT_HANDLER)
-    if (isSwitchToBackground) {
-        if (TryTriggerBackgroundGlobalCC()) {
-            return;
-        }
-        HILOG_INFO("ArkIdleMonitor: GlobalCC not triggered, fall back to local/shared idle GC");
-    }
-#endif
 #if defined(ANDROID_PLATFORM) || defined(IOS_PLATFORM)
     TryTriggerCompressGCOfProcessCrossPlatformGC(TRIGGER_IDLE_GC_TYPE::FULL_GC);
 #elif defined(ENABLE_EVENT_HANDLER)
-    // trigger main thread local gc.
-    auto mainThreadLocalTask = [this]() {
-        HILOG_DEBUG("ArkIdleMonitor: try trigger local full gc start");
-        std::unique_lock<std::mutex> lock(waitGCFinishjedMutex_);
-        JSNApi::TriggerIdleGC(mainVM_, TRIGGER_IDLE_GC_TYPE::FULL_GC);
-        HILOG_DEBUG("ArkIdleMonitor: try trigger local full gc end");
-        gcFinishCV_.notify_one();
-    };
-
     {
         TraceScope trace("TriggerMainThreadLocalGC");
+        HILOG_DEBUG("ArkIdleMonitor: main GC task post, GlobalCC enabled:%{public}d, switchToBackground:%{public}d",
+            ENABLE_BACKGROUND_GLOBAL_CC, isSwitchToBackground);
+        bool mainTaskDone = false;
+        bool globalCCAccepted = false;
+#if ENABLE_BACKGROUND_GLOBAL_CC
+        const bool tryGlobalCC = isSwitchToBackground && IsInBackground();
+#endif
+        auto mainThreadGCTask = [&, this]() {
+            bool accepted = false;
+#if ENABLE_BACKGROUND_GLOBAL_CC
+            accepted = tryGlobalCC && IsInBackground() && JSNApi::TryTriggerIdleGlobalCC(mainVM_);
+            HILOG_DEBUG("ArkIdleMonitor: GlobalCC accepted:%{public}d, local GC fallback:%{public}d",
+                accepted, !accepted);
+#endif
+            if (!accepted) {
+                HILOG_DEBUG("ArkIdleMonitor: try trigger local full gc start");
+                JSNApi::TriggerIdleGC(mainVM_, TRIGGER_IDLE_GC_TYPE::FULL_GC);
+                HILOG_DEBUG("ArkIdleMonitor: try trigger local full gc end");
+            }
+            std::lock_guard<std::mutex> lock(waitGCFinishjedMutex_);
+            globalCCAccepted = accepted;
+            mainTaskDone = true;
+            gcFinishCV_.notify_all();
+        };
+        if (!mainThreadHandler_->PostTask(mainThreadGCTask, "ARKTS_IDLE_COMPRESS", 0,
+            OHOS::AppExecFwk::EventQueue::Priority::IMMEDIATE)) {
+            HILOG_WARN("ArkIdleMonitor: failed to post main thread GC task");
+            NotifyNeedFreeze(true);
+            return;
+        }
+
         std::unique_lock<std::mutex> lock(waitGCFinishjedMutex_);
-        mainThreadHandler_->PostTask(mainThreadLocalTask, "ARKTS_IDLE_COMPRESS", 0,
-            OHOS::AppExecFwk::EventQueue::Priority::IMMEDIATE);
-        gcFinishCV_.wait(lock);
+        // Worker and shared GC tasks also notify this CV.
+        gcFinishCV_.wait(lock, [&mainTaskDone]() { return mainTaskDone; });
+        if (globalCCAccepted) {
+            return;
+        }
     }
 #else
     HILOG_WARN("ArkIdleMonitor: not enable ENABLE_EVENT_HANDLER");

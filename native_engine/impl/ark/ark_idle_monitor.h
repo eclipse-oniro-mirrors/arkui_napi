@@ -304,9 +304,6 @@ private:
     void PostSwitchBackgroundGCTask();
     void ReportDataToRSS(bool needFreeze);
     void TryTriggerCompressGCOfProcess(bool isSwitchToBackground);
-#if defined(ENABLE_EVENT_HANDLER)
-    bool TryTriggerBackgroundGlobalCC();
-#endif
     bool TryTriggerBackgroundWorkerGC();
     int64_t TriggerBackgroundWorkerGCAndWait(napi_env workerEnv, std::unique_lock<std::mutex>& vectorLock);
     void PostBackgroundSharedGCTask(bool isSwitchToBackground);
